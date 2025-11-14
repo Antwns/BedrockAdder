@@ -217,6 +217,8 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
 
         private static IReadOnlyDictionary<string, string> BuildTextureMapForItem(CustomItem it)
         {
+            if (it.ModelTexturePaths.Count > 0) return it.ModelTexturePaths;
+
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(it.TexturePath)) map["default"] = it.TexturePath;
             return map;
@@ -224,6 +226,8 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
 
         private static IReadOnlyDictionary<string, string> BuildTextureMapForBlock(CustomBlock b)
         {
+            if (b.ModelTexturePaths.Count > 0) return b.ModelTexturePaths;
+
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(b.TexturePath)) map["default"] = b.TexturePath;
             return map;
@@ -237,6 +241,8 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
 
         private static IReadOnlyDictionary<string, string> BuildTextureMapForArmor(CustomArmor a)
         {
+            if (a.ModelTexturePaths.Count > 0) return a.ModelTexturePaths;
+
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(a.TexturePath)) map["default"] = a.TexturePath;
             return map;

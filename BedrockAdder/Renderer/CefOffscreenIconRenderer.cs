@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using System.Drawing;
-using System.Drawing.Imaging;
 using CefSharp;
 using CefSharp.OffScreen;
 using BedrockAdder.ConverterWorker.ObjectWorker;
@@ -33,79 +31,101 @@ namespace BedrockAdder.Renderer
         {
             try
             {
-                if (!File.Exists(_renderHtmlAbs))
-                {
-                    ConsoleWorker.Write.Line("error", "render.html not found: " + _renderHtmlAbs);
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(javaModelPath) || !File.Exists(javaModelPath))
-                {
-                    ConsoleWorker.Write.Line("warn", "Model path missing: " + javaModelPath);
-                    return false;
-                }
-
-                // Build texture map with file:/// URLs
-                var texMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var kv in textureSlotsAbs)
-                {
-                    if (!string.IsNullOrWhiteSpace(kv.Value) && File.Exists(kv.Value))
-                    {
-                        texMap[kv.Key] = new Uri(Path.GetFullPath(kv.Value)).AbsoluteUri;
-                    }
-                    else
-                    {
-                        ConsoleWorker.Write.Line("warn", "Missing texture for slot '" + kv.Key + "': " + kv.Value);
-                    }
-                }
-
-                string texMapJson = Newtonsoft.Json.JsonConvert.SerializeObject(texMap);
-                string texMapB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(texMapJson));
-
-                string modelFileUrl = new Uri(Path.GetFullPath(javaModelPath)).AbsoluteUri;
-                string htmlFileUrl = new Uri(Path.GetFullPath(_renderHtmlAbs)).AbsoluteUri;
-
-                string url = htmlFileUrl
-                    + "?size=" + _size
-                    + "&transparent=" + (_transparent ? "1" : "0")
-                    + "&modelPath=" + Uri.EscapeDataString(modelFileUrl)
-                    + "&texMap=" + Uri.EscapeDataString(texMapB64);
-
-                using (var browser = new ChromiumWebBrowser())
-                {
-                    browser.BrowserInitialized += (s, e) => browser.Load(url);
-
-                    // wait page signal
-                    var okTask = WaitForRenderDone(browser, TimeSpan.FromSeconds(12));
-                    okTask.Wait();
-                    if (!okTask.Result)
-                    {
-                        ConsoleWorker.Write.Line("warn", "Render timeout or page init failed.");
-                        return false;
-                    }
-
-                    // capture PNG (no ScreenshotFormat enum here)
-                    var bmpTask = browser.ScreenshotAsync(ignoreExistingScreenshot: true);
-                    bmpTask.Wait();
-                    using (Bitmap bmp = bmpTask.Result)
-                    {
-                        if (bmp == null)
-                        {
-                            ConsoleWorker.Write.Line("warn", "No bitmap returned from ScreenshotAsync.");
-                            return false;
-                        }
-
-                        Directory.CreateDirectory(Path.GetDirectoryName(iconPngAbs) ?? AppContext.BaseDirectory);
-                        bmp.Save(iconPngAbs, ImageFormat.Png);
-                    }
-
-                    ConsoleWorker.Write.Line("info", "Cef render → " + iconPngAbs);
-                    return File.Exists(iconPngAbs);
-                }
+                return TryRenderIconInternalAsync(javaModelPath, textureSlotsAbs, iconPngAbs)
+                    .GetAwaiter()
+                    .GetResult();
             }
             catch (Exception ex)
             {
                 ConsoleWorker.Write.Line("error", "CefOffscreenIconRenderer error: " + ex.Message);
                 return false;
+            }
+        }
+
+        private async Task<bool> TryRenderIconInternalAsync(string javaModelPath,
+                                                            IReadOnlyDictionary<string, string> textureSlotsAbs,
+                                                            string iconPngAbs)
+        {
+            if (!File.Exists(_renderHtmlAbs))
+            {
+                ConsoleWorker.Write.Line("error", "render.html not found: " + _renderHtmlAbs);
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(javaModelPath) || !File.Exists(javaModelPath))
+            {
+                ConsoleWorker.Write.Line("warn", "Model path missing: " + javaModelPath);
+                return false;
+            }
+
+            var texMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in textureSlotsAbs)
+            {
+                if (!string.IsNullOrWhiteSpace(kv.Value) && File.Exists(kv.Value))
+                {
+                    texMap[kv.Key] = new Uri(Path.GetFullPath(kv.Value)).AbsoluteUri;
+                }
+                else
+                {
+                    ConsoleWorker.Write.Line("warn", "Missing texture for slot '" + kv.Key + "': " + kv.Value);
+                }
+            }
+
+            string texMapJson = Newtonsoft.Json.JsonConvert.SerializeObject(texMap);
+            string texMapB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(texMapJson));
+
+            string modelFileUrl = new Uri(Path.GetFullPath(javaModelPath)).AbsoluteUri;
+            string htmlFileUrl = new Uri(Path.GetFullPath(_renderHtmlAbs)).AbsoluteUri;
+
+            string url = htmlFileUrl
+                + "?size=" + _size
+                + "&transparent=" + (_transparent ? "1" : "0")
+                + "&modelPath=" + Uri.EscapeDataString(modelFileUrl)
+                + "&texMap=" + Uri.EscapeDataString(texMapB64);
+
+            using (var browser = new ChromiumWebBrowser())
+            {
+                browser.Size = new System.Drawing.Size(_size, _size);
+
+                var initialLoad = browser.WaitForInitialLoadAsync();
+                browser.BrowserInitialized += (s, e) => browser.LoadUrl(url);
+
+                var initialResponse = await initialLoad.ConfigureAwait(false);
+                if (!initialResponse.Success)
+                {
+                    ConsoleWorker.Write.Line("warn", "Initial render load reported failure: " + initialResponse.HttpStatusCode + " (" + initialResponse.ErrorCode + ")");
+                }
+
+                bool ready = await WaitForRenderDoneAsync(browser, TimeSpan.FromSeconds(12)).ConfigureAwait(false);
+                if (!ready)
+                {
+                    ConsoleWorker.Write.Line("warn", "Render timeout or page init failed.");
+                    return false;
+                }
+
+                var screenshot = await browser.CaptureScreenshotAsync().ConfigureAwait(false);
+                if (screenshot == null || string.IsNullOrWhiteSpace(screenshot.Data))
+                {
+                    ConsoleWorker.Write.Line("warn", "CaptureScreenshotAsync returned no data.");
+                    return false;
+                }
+
+                byte[] pngBytes;
+                try
+                {
+                    pngBytes = Convert.FromBase64String(screenshot.Data);
+                }
+                catch (FormatException)
+                {
+                    ConsoleWorker.Write.Line("warn", "Invalid screenshot data returned from renderer.");
+                    return false;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(iconPngAbs) ?? AppContext.BaseDirectory);
+                File.WriteAllBytes(iconPngAbs, pngBytes);
+
+                ConsoleWorker.Write.Line("info", "Cef render → " + iconPngAbs);
+                return File.Exists(iconPngAbs);
             }
         }
 
@@ -130,21 +150,27 @@ namespace BedrockAdder.Renderer
             _cefInit = true;
         }
 
-        private static async Task<bool> WaitForRenderDone(ChromiumWebBrowser browser, TimeSpan timeout)
+        private static async Task<bool> WaitForRenderDoneAsync(ChromiumWebBrowser browser, TimeSpan timeout)
         {
             var start = DateTime.UtcNow;
             while (DateTime.UtcNow - start < timeout)
             {
-                if (!browser.IsBrowserInitialized)
+                if (!browser.IsBrowserInitialized || browser.GetBrowser() == null)
                 {
-                    await Task.Delay(50);
+                    await Task.Delay(50).ConfigureAwait(false);
                     continue;
                 }
 
-                var resp = await browser.EvaluateScriptAsync("window.renderDone === true");
+                if (!browser.CanExecuteJavascriptInMainFrame)
+                {
+                    await Task.Delay(50).ConfigureAwait(false);
+                    continue;
+                }
+
+                var resp = await browser.EvaluateScriptAsync("window.renderDone === true").ConfigureAwait(false);
                 if (resp?.Success == true && resp.Result is bool b && b) return true;
 
-                await Task.Delay(50);
+                await Task.Delay(50).ConfigureAwait(false);
             }
             return false;
         }

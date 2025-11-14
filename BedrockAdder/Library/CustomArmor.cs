@@ -1,4 +1,6 @@
-﻿namespace BedrockAdder.Library
+﻿using System.Collections.Generic;
+
+namespace BedrockAdder.Library
 {
     internal class CustomArmor
     {
@@ -12,5 +14,7 @@
         public string? IconPath { get; set; } // Optional 2D inventory icon
         public string ArmorLayerChest { get; set; } // Needed to get the image for the chest layer(Worn)
         public string ArmorLayerLegs { get; set; } // Needed to get the image for the legs layer(Worn)
+
+        public Dictionary<string, string> ModelTexturePaths { get; } = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
     }
 }

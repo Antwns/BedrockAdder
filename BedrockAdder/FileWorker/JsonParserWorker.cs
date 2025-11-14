@@ -259,11 +259,111 @@ namespace BedrockAdder.FileWorker
             return "assets/minecraft/" + vanilla;
         }
 
+        public static bool TryResolveContentAssetAbsolute(
+            string itemsAdderFolder,
+            string normalizedAssetPath,
+            out string absolutePath,
+            string? defaultNamespace = null)
+        {
+            absolutePath = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(itemsAdderFolder) || string.IsNullOrWhiteSpace(normalizedAssetPath))
+                return false;
+
+            string clean = normalizedAssetPath.Replace('\\', '/').Trim();
+            if (string.IsNullOrWhiteSpace(clean))
+                return false;
+
+            clean = clean.TrimStart('/');
+
+            if (!clean.StartsWith("assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(defaultNamespace))
+                {
+                    string rel = clean;
+                    if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                        rel = "textures/" + rel;
+                    clean = $"assets/{defaultNamespace}/{rel}";
+                }
+                else
+                {
+                    clean = "assets/" + clean;
+                }
+            }
+
+            string withoutAssets = clean.Substring("assets/".Length);
+            int firstSlash = withoutAssets.IndexOf('/');
+            if (firstSlash <= 0)
+                return false;
+
+            string ns = withoutAssets.Substring(0, firstSlash);
+            string rel = withoutAssets.Substring(firstSlash + 1); // e.g. "models/foo.json" or "textures/item/bar.png"
+            string relPath = rel.Replace('/', Path.DirectorySeparatorChar);
+
+            var candidates = new List<string>
+            {
+                Path.Combine(itemsAdderFolder, "contents", ns, "resourcepack", "assets", ns, relPath),
+                Path.Combine(itemsAdderFolder, "contents", ns, "resourcepack", ns, relPath),
+                Path.Combine(itemsAdderFolder, "contents", ns, "resourcepack", relPath),
+                Path.Combine(itemsAdderFolder, "output", "resourcepack", "assets", ns, relPath),
+                Path.Combine(itemsAdderFolder, "output", "resourcepack", relPath)
+            };
+
+            foreach (var candidate in candidates)
+            {
+                if (File.Exists(candidate))
+                {
+                    absolutePath = candidate;
+                    return true;
+                }
+            }
+
+            string zipPath = GetGeneratedZipPath(itemsAdderFolder);
+            if (TryOpenZipEntryBytes(zipPath, clean, out var data) && data.Length > 0)
+            {
+                string cacheDir = Path.Combine(itemsAdderFolder, "output", "_cache_assets");
+                Directory.CreateDirectory(cacheDir);
+
+                string safeName = MakeSafeCacheFileName(clean);
+                string cachePath = Path.Combine(cacheDir, safeName);
+
+                if (!File.Exists(cachePath))
+                {
+                    File.WriteAllBytes(cachePath, data);
+                }
+
+                absolutePath = cachePath;
+                return true;
+            }
+
+            if (candidates.Count > 0)
+                absolutePath = candidates[0];
+
+            return false;
+        }
+
         public static bool IsVanillaTexturePath(string normalizedPath)
         {
             return !string.IsNullOrWhiteSpace(normalizedPath)
                 && normalizedPath.Replace('\\', '/')
                    .StartsWith("assets/minecraft/textures/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string MakeSafeCacheFileName(string normalizedAssetPath)
+        {
+            string name = normalizedAssetPath.Replace('\\', '_').Replace('/', '_');
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+            {
+                name = name.Replace(invalid, '_');
+            }
+            if (!name.EndsWith(Path.GetExtension(normalizedAssetPath), StringComparison.OrdinalIgnoreCase))
+            {
+                string ext = Path.GetExtension(normalizedAssetPath);
+                if (string.IsNullOrWhiteSpace(ext))
+                    ext = ".bin";
+                name += ext;
+            }
+            return name;
         }
     }
 }

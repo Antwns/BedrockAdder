@@ -18,124 +18,231 @@
 </head>
 <body>
     <script>
-        (async function() {
-        const url = new URL(window.location.href);
-        const size = parseInt(url.searchParams.get('size') || '256', 10);
-        const modelPath = url.searchParams.get('modelPath'); // file:///.../model.json
-        const texMapB64 = url.searchParams.get('texMap');    // base64(JSON {slot->file:///...png})
-        const bgTransparent = (url.searchParams.get('transparent') || '1') === '1';
+        (async function () {
+            const url = new URL(window.location.href);
+            const size = parseInt(url.searchParams.get('size') || '256', 10);
+            const modelPath = url.searchParams.get('modelPath'); // file:///.../model.json
+            const texMapB64 = url.searchParams.get('texMap');    // base64(JSON {slot->file:///...png})
+            const bgTransparent = (url.searchParams.get('transparent') || '1') === '1';
 
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 1000);
-        camera.position.set(24, 24, 36);
-        camera.lookAt(0, 12, 0);
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 1000);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: bgTransparent });
-        renderer.setSize(size, size);
-        document.body.appendChild(renderer.domElement);
+            const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: bgTransparent });
+            renderer.setPixelRatio(1);
+            renderer.setSize(size, size);
+            renderer.setClearAlpha(bgTransparent ? 0 : 1);
+            document.body.appendChild(renderer.domElement);
 
-        const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.1);
-        hemi.position.set(0, 50, 0);
-        scene.add(hemi);
+            const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.1);
+            hemi.position.set(0, 50, 0);
+            scene.add(hemi);
 
-        const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-        dir.position.set(30, 50, 40);
-        scene.add(dir);
+            const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+            dir.position.set(30, 50, 40);
+            scene.add(dir);
 
-        function parseB64Json(b64) {
-        try { return JSON.parse(atob(b64 || '')); } catch { return {}; }
-        }
+            function parseB64Json(b64) {
+                try { return JSON.parse(atob(b64 || '')); } catch { return {}; }
+            }
 
-        function fileTexture(urlStr) {
-        return new Promise((resolve) => {
-        const tl = new THREE.TextureLoader();
-        tl.load(urlStr, tex => { tex.flipY = false; resolve(tex); }, undefined, () => resolve(null));
-        });
-        }
+            function loadTexture(urlStr) {
+                return new Promise((resolve) => {
+                    const loader = new THREE.TextureLoader();
+                    loader.load(urlStr, tex => {
+                        tex.flipY = false;
+                        resolve(tex);
+                    }, undefined, () => resolve(null));
+                });
+            }
 
-        function boxGeomFromElement(el) {
-        const f = el.from, t = el.to;
-        const w = (t[0] - f[0]);
-        const h = (t[1] - f[1]);
-        const d = (t[2] - f[2]);
-        const geom = new THREE.BoxGeometry(w, h, d);
-        // translate: center at ((f+t)/2) then shift to our world (Java→Bedrock-ish)
-        const cx = (f[0] + t[0]) / 2 - 8;
-        const cy = 24 - (f[1] + t[1]) / 2;
-        const cz = (f[2] + t[2]) / 2 - 8;
-        geom.translate(cx, cy, cz);
-        return geom;
-        }
+            async function loadTextureDictionary(map) {
+                const result = {};
+                const entries = Object.entries(map || {});
+                for (const [slot, uri] of entries) {
+                    if (!uri) continue;
+                    result[slot] = await loadTexture(uri);
+                }
+                return result;
+            }
 
-        function applyFaceUVs(geom, el, mainTex) {
-        // Minimal UV mapping: use per-face UV rects if present, normalized by texture size.
-        // three.js BoxGeometry index order: px nx py ny pz nz (groups 0..5)
-        const faces = el.faces || {};
-        const groups = geom.groups || [];
-        const uvAttr = geom.attributes.uv;
-        const texW = mainTex ? mainTex.image.width : 64;
-        const texH = mainTex ? mainTex.image.height : 64;
+            function boxGeomFromElement(el) {
+                const f = el.from, t = el.to;
+                const w = (t[0] - f[0]);
+                const h = (t[1] - f[1]);
+                const d = (t[2] - f[2]);
+                const geom = new THREE.BoxGeometry(w, h, d);
+                const cx = (f[0] + t[0]) / 2 - 8;
+                const cy = 24 - (f[1] + t[1]) / 2;
+                const cz = (f[2] + t[2]) / 2 - 8;
+                geom.translate(cx, cy, cz);
+                return geom;
+            }
 
-        const mapNames = ["east","west","up","down","south","north"]; // match to groups 0..5
-        for (let g = 0; g < Math.min(groups.length, 6); g++) {
-        const faceName = mapNames[g];
-        const face = faces[faceName];
-        if (!face || !face.uv) continue;
-        const uv = face.uv; // [u1,v1,u2,v2]
-        const u1 = Math.min(uv[0], uv[2]) / texW;
-        const v1 = Math.min(uv[1], uv[3]) / texH;
-        const u2 = Math.max(uv[0], uv[2]) / texW;
-        const v2 = Math.max(uv[1], uv[3]) / texH;
+            function faceNameOrder() {
+                return ["east", "west", "up", "down", "south", "north"];
+            }
 
-        // Each group has 2 triangles (6 uv coords => 12 numbers). Update the slice.
-        const start = groups[g].start * 2; // 2 uv per vertex
-        const rect = [
-        u2, v1,  u1, v1,  u2, v2,  // tri 1
-        u1, v1,  u1, v2,  u2, v2   // tri 2
-        ];
-        for (let i = 0; i < 12; i++) {
-        uvAttr.array[start + i] = rect[i];
-        }
-        }
-        uvAttr.needsUpdate = true;
-        }
+            function applyFaceUVs(geom, group, face, texture) {
+                if (!geom || !group) return;
+                const uvAttr = geom.attributes.uv;
+                if (!uvAttr) return;
 
-        try {
-        const model = await (await fetch(modelPath)).json();
-        const texMap = parseB64Json(texMapB64);
-        // choose a "main" texture (used only for uv normalization); first available wins
-        let mainTex = null;
-        for (const k of Object.keys(texMap)) {
-        mainTex = await fileTexture(texMap[k]);
-        if (mainTex) break;
-        }
-        const mat = new THREE.MeshStandardMaterial({
-        map: mainTex,
-        transparent: true
-        });
+                const tex = texture || null;
+                const texW = tex && tex.image && tex.image.width ? tex.image.width : 64;
+                const texH = tex && tex.image && tex.image.height ? tex.image.height : 64;
 
-        const elements = model.elements || [];
-        elements.forEach(el => {
-        const geom = boxGeomFromElement(el);
-        if (mainTex) applyFaceUVs(geom, el, mainTex);
-        const mesh = new THREE.Mesh(geom, mat);
-        // single-axis element rotation (Blockbench-style)
-        if (el.rotation) {
-        const axis = el.rotation.axis || "y";
-        const angle = (el.rotation.angle || 0) * Math.PI / 180;
-        if (axis === "x") mesh.rotateX(angle);
-        else if (axis === "y") mesh.rotateY(angle);
-        else if (axis === "z") mesh.rotateZ(angle);
-        }
-        scene.add(mesh);
-        });
+                if (!face || !face.uv || face.uv.length < 4) return;
 
-        renderer.render(scene, camera);
-        window.renderDone = true;
-        } catch (e) {
-        console.error(e);
-        window.renderDone = true;
-        }
+                const uv = face.uv;
+                const u1 = Math.min(uv[0], uv[2]) / texW;
+                const v1 = Math.min(uv[1], uv[3]) / texH;
+                const u2 = Math.max(uv[0], uv[2]) / texW;
+                const v2 = Math.max(uv[1], uv[3]) / texH;
+
+                const start = group.start * 2; // each index has a matching uv pair
+                const rect = [
+                    u2, v1, u1, v1, u2, v2,
+                    u1, v1, u1, v2, u2, v2
+                ];
+
+                for (let i = 0; i < rect.length && (start + i) < uvAttr.array.length; i++) {
+                    uvAttr.array[start + i] = rect[i];
+                }
+                uvAttr.needsUpdate = true;
+            }
+
+            function sanitizeSlotName(slot) {
+                if (typeof slot !== 'string') return '';
+                return slot.startsWith('#') ? slot.substring(1) : slot;
+            }
+
+            function applyDisplayTransform(group, displayRoot) {
+                if (!displayRoot) return;
+                const gui = displayRoot.gui || displayRoot.GUI || null;
+                if (!gui) return;
+
+                const rot = Array.isArray(gui.rotation) ? gui.rotation : Array.isArray(gui.Rotation) ? gui.Rotation : null;
+                const trans = Array.isArray(gui.translation) ? gui.translation : Array.isArray(gui.Translation) ? gui.Translation : null;
+                const scale = Array.isArray(gui.scale) ? gui.scale : Array.isArray(gui.Scale) ? gui.Scale : null;
+
+                if (rot && rot.length === 3) {
+                    group.rotation.set(
+                        THREE.MathUtils.degToRad(rot[0]),
+                        THREE.MathUtils.degToRad(rot[1]),
+                        THREE.MathUtils.degToRad(rot[2])
+                    );
+                }
+
+                if (trans && trans.length === 3) {
+                    group.position.set(trans[0] / 16, trans[1] / 16, trans[2] / 16);
+                }
+
+                if (scale && scale.length === 3) {
+                    group.scale.set(scale[0], scale[1], scale[2]);
+                }
+            }
+
+            try {
+                const response = await fetch(modelPath);
+                const model = await response.json();
+                const texMap = parseB64Json(texMapB64);
+                const textures = await loadTextureDictionary(texMap);
+                const fallbackTexture = Object.values(textures).find(t => t) || null;
+
+                const materialCache = new Map();
+                const materials = [];
+
+                function materialIndexFor(slotName) {
+                    const slot = sanitizeSlotName(slotName);
+                    const tex = (slot && textures[slot]) || fallbackTexture;
+                    const key = tex ? tex.uuid : '__flat__';
+
+                    if (!materialCache.has(key)) {
+                        const mat = new THREE.MeshStandardMaterial({
+                            map: tex || null,
+                            transparent: true,
+                            roughness: 0.8,
+                            metalness: 0.0
+                        });
+                        materialCache.set(key, materials.length);
+                        materials.push(mat);
+                    }
+
+                    return materialCache.get(key);
+                }
+
+                const rootGroup = new THREE.Group();
+                const elements = model.elements || [];
+                const order = faceNameOrder();
+
+                elements.forEach(el => {
+                    const geom = boxGeomFromElement(el);
+                    const faces = el.faces || {};
+                    const groups = geom.groups || [];
+
+                    for (let g = 0; g < Math.min(groups.length, order.length); g++) {
+                        const faceName = order[g];
+                        const face = faces[faceName] || null;
+                        const slotName = face && face.texture ? face.texture : null;
+                        const matIndex = materialIndexFor(slotName);
+                        if (groups[g]) {
+                            groups[g].materialIndex = matIndex;
+                        }
+                        const slot = sanitizeSlotName(slotName);
+                        const tex = (slot && textures[slot]) || fallbackTexture;
+                        applyFaceUVs(geom, groups[g], face, tex);
+                    }
+
+                    const mesh = new THREE.Mesh(geom, materials);
+
+                    if (el.rotation) {
+                        const axis = el.rotation.axis || 'y';
+                        const angle = (el.rotation.angle || 0) * Math.PI / 180;
+                        if (axis === 'x') mesh.rotateX(angle);
+                        else if (axis === 'y') mesh.rotateY(angle);
+                        else if (axis === 'z') mesh.rotateZ(angle);
+                    }
+
+                    rootGroup.add(mesh);
+                });
+
+                const hadDisplay = !!(model.display && (model.display.gui || model.display.GUI));
+                applyDisplayTransform(rootGroup, model.display);
+                if (!hadDisplay) {
+                    rootGroup.rotation.set(
+                        THREE.MathUtils.degToRad(30),
+                        THREE.MathUtils.degToRad(45),
+                        0
+                    );
+                }
+                scene.add(rootGroup);
+
+                const bbox = new THREE.Box3().setFromObject(rootGroup);
+                if (bbox.isEmpty()) {
+                    camera.position.set(16, 16, 16);
+                    camera.lookAt(0, 0, 0);
+                } else {
+                    const sizeVec = bbox.getSize(new THREE.Vector3());
+                    const center = bbox.getCenter(new THREE.Vector3());
+
+                    const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z, 1);
+                    const distance = maxDim * 1.9;
+                    camera.position.set(center.x + distance, center.y + distance, center.z + distance);
+                    camera.lookAt(center);
+                }
+
+                renderer.render(scene, camera);
+
+                if (typeof renderer.dispose === 'function') {
+                    renderer.dispose();
+                }
+
+                window.renderDone = true;
+            } catch (e) {
+                console.error(e);
+                window.renderDone = true;
+            }
         })();
     </script>
 </body>
