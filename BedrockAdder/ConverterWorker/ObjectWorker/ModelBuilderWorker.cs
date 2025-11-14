@@ -19,7 +19,10 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
         public static Built3DObject Build(CustomItem item, string itemsAdderFolder, IModelIconRenderer? iconRenderer = null)
         {
             var texMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(item.TexturePath)) texMap["default"] = item.TexturePath;
+            foreach (var kv in item.ModelTexturePaths)
+                texMap[kv.Key] = kv.Value;
+            if (texMap.Count == 0 && !string.IsNullOrWhiteSpace(item.TexturePath))
+                texMap["default"] = item.TexturePath;
 
             return BuildCore(
                 kind: Built3DKind.Item,
@@ -35,7 +38,10 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
         public static Built3DObject Build(CustomBlock block, IModelIconRenderer? iconRenderer = null)
         {
             var texMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(block.TexturePath)) texMap["default"] = block.TexturePath;
+            foreach (var kv in block.ModelTexturePaths)
+                texMap[kv.Key] = kv.Value;
+            if (texMap.Count == 0 && !string.IsNullOrWhiteSpace(block.TexturePath))
+                texMap["default"] = block.TexturePath;
 
             return BuildCore(
                 kind: Built3DKind.Block,
@@ -51,7 +57,9 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
         public static Built3DObject Build(CustomFurniture furniture, IModelIconRenderer? iconRenderer = null)
         {
             // Use the texture map already parsed by your workers
-            var texMap = furniture.TexturePaths ?? new Dictionary<string, string>();
+            var texMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in furniture.TexturePaths)
+                texMap[kv.Key] = kv.Value;
 
             return BuildCore(
                 kind: Built3DKind.Furniture,
@@ -86,7 +94,10 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
             }
 
             var texMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(armor.TexturePath)) texMap["default"] = armor.TexturePath;
+            foreach (var kv in armor.ModelTexturePaths)
+                texMap[kv.Key] = kv.Value;
+            if (texMap.Count == 0 && !string.IsNullOrWhiteSpace(armor.TexturePath))
+                texMap["default"] = armor.TexturePath;
 
             return BuildCore(
                 kind: Built3DKind.Helmet,

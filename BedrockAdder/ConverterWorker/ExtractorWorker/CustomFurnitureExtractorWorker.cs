@@ -79,10 +79,34 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         Dictionary<string, string> textureMap =
                             JsonParserWorker.ResolveModelTextureMapWithParents(itemsAdderRootPath, furnitureNamespace, modelNameForZip);
 
+                        var textureMapAbs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kv in textureMap)
+                        {
+                            string normalizedAsset = kv.Value;
+                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, normalizedAsset, out var texAbs) && File.Exists(texAbs))
+                            {
+                                textureMapAbs[kv.Key] = texAbs;
+                                ConsoleWorker.Write.Line("debug", furnitureNamespace + ":" + furnitureItemId + " texture slot " + kv.Key + " → " + texAbs);
+                            }
+                            else
+                            {
+                                ConsoleWorker.Write.Line("warn", furnitureNamespace + ":" + furnitureItemId + " missing furniture texture for slot " + kv.Key + ": " + normalizedAsset);
+                            }
+                        }
+
                         // Icon (2D) if present (rp-relative)
                         string iconPath = string.Empty;
                         if (FurnitureYamlParserWorker.TryGet2DTexturePathNormalized(itemProps, out var iconNormalized) && !string.IsNullOrWhiteSpace(iconNormalized))
-                            iconPath = iconNormalized;
+                        {
+                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, iconNormalized, out var iconAbs) && File.Exists(iconAbs))
+                            {
+                                iconPath = iconAbs;
+                            }
+                            else
+                            {
+                                ConsoleWorker.Write.Line("warn", furnitureNamespace + ":" + furnitureItemId + " icon texture not found: " + iconNormalized);
+                            }
+                        }
 
                         // Material and CustomModelData (use existing helpers)
                         string material = FurnitureYamlParserWorker.TryGetArmorMaterial(itemProps, "minecraft:stick");
@@ -91,16 +115,30 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         // Build rp-relative model path (keep ".json" suffix, and keep subfolder prefix, e.g., "models/<modelName>.json")
                         string modelPathRpRelative = "assets/" + furnitureNamespace + "/models/" + modelNameForZip + ".json";
 
+                        string modelPathAbsolute = modelPathRpRelative;
+                        if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, modelPathRpRelative, out var modelAbs) && File.Exists(modelAbs))
+                        {
+                            modelPathAbsolute = modelAbs;
+                        }
+                        else
+                        {
+                            ConsoleWorker.Write.Line("warn", furnitureNamespace + ":" + furnitureItemId + " furniture model missing on disk: " + modelPathRpRelative);
+                        }
+
                         var customFurniture = new CustomFurniture
                         {
                             FurnitureNamespace = furnitureNamespace,
                             FurnitureItemID = furnitureItemId,
-                            ModelPath = modelPathRpRelative,   // resource-pack relative
-                            TexturePaths = textureMap,         // keyed textures (particle removed by JsonParserWorker)
+                            ModelPath = modelPathAbsolute,
                             IconPath = string.IsNullOrWhiteSpace(iconPath) ? null : iconPath,
                             Material = material,
                             CustomModelData = customModelData
                         };
+
+                        foreach (var kv in textureMapAbs)
+                        {
+                            customFurniture.TexturePaths[kv.Key] = kv.Value;
+                        }
 
                         Lists.CustomFurniture.Add(customFurniture);
                         furnitureItemsAdded++;
