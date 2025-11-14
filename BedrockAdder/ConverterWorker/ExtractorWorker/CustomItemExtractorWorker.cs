@@ -110,50 +110,59 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             !string.IsNullOrWhiteSpace(itemNamespace))
                         {
                             customItem.Is3D = true;
-                            customItem.ModelPath = "assets/" + itemNamespace + "/models/" + modelName + ".json";
+                            customItem.ModelTexturePaths.Clear();
+
+                            string modelAsset = "assets/" + itemNamespace + "/models/" + modelName + ".json";
                             LogInfo(itemNamespace, itemId, "is 3D model " + modelName);
-                            LogInfo(itemNamespace, itemId, "has assigned model " + customItem.ModelPath);
+                            LogInfo(itemNamespace, itemId, "has assigned model " + modelAsset);
+
+                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, modelAsset, out var modelAbs) &&
+                                File.Exists(modelAbs))
+                            {
+                                customItem.ModelPath = modelAbs;
+                                LogInfo(itemNamespace, itemId, "resolved model file " + modelAbs);
+                            }
+                            else
+                            {
+                                customItem.ModelPath = modelAsset;
+                                ConsoleWorker.Write.Line("warn", itemNamespace + ":" + itemId + " model json missing on disk: " + modelAsset);
+                            }
 
                             var texMap = JsonParserWorker.ResolveModelTextureMapWithParents(itemsAdderFolder, itemNamespace!, modelName);
                             foreach (var kv in texMap)
-                                LogInfo(itemNamespace, itemId, "has model texture " + kv.Value + " (key " + kv.Key + ")");
-
-                            if (string.IsNullOrWhiteSpace(customItem.TexturePath))
                             {
-                                foreach (var tex in texMap)
+                                string normalizedAsset = kv.Value;
+                                LogInfo(itemNamespace, itemId, "has model texture " + normalizedAsset + " (key " + kv.Key + ")");
+
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalizedAsset, out var texAbs) &&
+                                    File.Exists(texAbs))
                                 {
-                                    var normalizedAsset = tex.Value;
-                                    if (string.IsNullOrWhiteSpace(normalizedAsset))
-                                        continue;
+                                    customItem.ModelTexturePaths[kv.Key] = texAbs;
+                                    LogInfo(itemNamespace, itemId, "resolved texture slot " + kv.Key + " → " + texAbs);
 
-                                    // e.g. assets/<ns>/textures/foo/bar.png  or minecraft:item/sugar
-                                    string rel = normalizedAsset.Replace("\\", "/");
-                                    int idxTex = rel.IndexOf("textures/", StringComparison.OrdinalIgnoreCase);
-                                    if (idxTex >= 0)
-                                        rel = rel.Substring(idxTex + "textures/".Length);
-                                    rel = rel.TrimStart('/');
-
-                                    if (string.IsNullOrWhiteSpace(rel))
-                                        continue;
-
-                                    // Build absolute ItemsAdder content texture path
-                                    string abs = ItemYamlParserWorker.BuildItemsAdderContentTexturePath(itemsAdderFolder, itemNamespace!, rel);
-                                    customItem.TexturePath = abs;
-                                    LogInfo(itemNamespace, itemId, "auto-assigned texture file " + customItem.TexturePath);
-
-                                    if (JsonParserWorker.IsVanillaTexturePath(normalizedAsset))
+                                    if (string.IsNullOrWhiteSpace(customItem.TexturePath))
                                     {
-                                        if (!string.IsNullOrWhiteSpace(versionDir))
-                                            LogInfo(itemNamespace, itemId, "vanilla texture will be taken from version " + selectedVersion + " (" + versionDir + ")");
-                                        else
-                                            LogInfo(itemNamespace, itemId, "vanilla texture detected but no version selected");
-                                    }
+                                        customItem.TexturePath = texAbs;
+                                        LogInfo(itemNamespace, itemId, "auto-assigned texture file " + customItem.TexturePath);
 
-                                    break;
+                                        if (JsonParserWorker.IsVanillaTexturePath(normalizedAsset))
+                                        {
+                                            if (!string.IsNullOrWhiteSpace(versionDir))
+                                                LogInfo(itemNamespace, itemId, "vanilla texture will be taken from version " + selectedVersion + " (" + versionDir + ")");
+                                            else
+                                                LogInfo(itemNamespace, itemId, "vanilla texture detected but no version selected");
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    ConsoleWorker.Write.Line("warn", itemNamespace + ":" + itemId + " missing texture for slot " + kv.Key + ": " + normalizedAsset);
                                 }
                             }
 
-                            if (string.IsNullOrWhiteSpace(customItem.IconPath) && !string.IsNullOrWhiteSpace(customItem.TexturePath))
+                            if (string.IsNullOrWhiteSpace(customItem.IconPath) &&
+                                !string.IsNullOrWhiteSpace(customItem.TexturePath) &&
+                                File.Exists(customItem.TexturePath))
                             {
                                 customItem.IconPath = customItem.TexturePath;
                                 LogInfo(itemNamespace, itemId, "auto-assigned icon from texture " + customItem.IconPath);
@@ -172,25 +181,20 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             }
                             else if (ItemYamlParserWorker.TryGet2DTexturePathNormalized(props, out var rel2d))
                             {
-                                if (!string.IsNullOrWhiteSpace(itemNamespace))
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, rel2d, out var abs, itemNamespace) && File.Exists(abs))
                                 {
-                                    string abs = ItemYamlParserWorker.BuildItemsAdderContentTexturePath(itemsAdderFolder, itemNamespace!, rel2d);
                                     customItem.TexturePath = abs;
-
                                     if (string.IsNullOrWhiteSpace(customItem.IconPath))
                                         customItem.IconPath = abs;
+
+                                    LogInfo(itemNamespace, itemId, "has assigned texture " + customItem.TexturePath);
+                                    if (!string.IsNullOrWhiteSpace(customItem.IconPath))
+                                        LogInfo(itemNamespace, itemId, "has assigned icon " + customItem.IconPath);
                                 }
                                 else
                                 {
-                                    // Fallback, should be rare now that we default from fileNamespace
-                                    customItem.TexturePath = rel2d;
-                                    if (string.IsNullOrWhiteSpace(customItem.IconPath))
-                                        customItem.IconPath = rel2d;
+                                    ConsoleWorker.Write.Line("warn", itemNamespace + ":" + itemId + " 2D texture not found: " + rel2d);
                                 }
-
-                                LogInfo(itemNamespace, itemId, "has assigned texture " + customItem.TexturePath);
-                                if (!string.IsNullOrWhiteSpace(customItem.IconPath))
-                                    LogInfo(itemNamespace, itemId, "has assigned icon " + customItem.IconPath);
                             }
                         }
                     }
@@ -207,47 +211,58 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             string modelName2 = Path.GetFileNameWithoutExtension(norm);
 
                             customItem.Is3D = true;
-                            customItem.ModelPath = "assets/" + itemNamespace + "/models/" + modelName2 + ".json";
-                            LogInfo(itemNamespace, itemId, "is 3D model (resource) " + customItem.ModelPath);
+                            customItem.ModelTexturePaths.Clear();
+
+                            string modelAsset = "assets/" + itemNamespace + "/models/" + modelName2 + ".json";
+                            LogInfo(itemNamespace, itemId, "is 3D model (resource) " + modelAsset);
+
+                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, modelAsset, out var modelAbs) &&
+                                File.Exists(modelAbs))
+                            {
+                                customItem.ModelPath = modelAbs;
+                                LogInfo(itemNamespace, itemId, "resolved model file " + modelAbs);
+                            }
+                            else
+                            {
+                                customItem.ModelPath = modelAsset;
+                                ConsoleWorker.Write.Line("warn", itemNamespace + ":" + itemId + " resource model missing on disk: " + modelAsset);
+                            }
 
                             var texMap2 = JsonParserWorker.ResolveModelTextureMapWithParents(itemsAdderFolder, itemNamespace!, modelName2);
                             foreach (var kv in texMap2)
-                                LogInfo(itemNamespace, itemId, "has model texture " + kv.Value + " (key " + kv.Key + ")");
-
-                            if (string.IsNullOrWhiteSpace(customItem.TexturePath))
                             {
-                                foreach (var tex in texMap2)
+                                string normalizedAsset = kv.Value;
+                                LogInfo(itemNamespace, itemId, "has model texture " + normalizedAsset + " (key " + kv.Key + ")");
+
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalizedAsset, out var texAbs) &&
+                                    File.Exists(texAbs))
                                 {
-                                    var normalizedAsset = tex.Value;
-                                    if (string.IsNullOrWhiteSpace(normalizedAsset))
-                                        continue;
+                                    customItem.ModelTexturePaths[kv.Key] = texAbs;
+                                    LogInfo(itemNamespace, itemId, "resolved texture slot " + kv.Key + " → " + texAbs);
 
-                                    string rel = normalizedAsset.Replace("\\", "/");
-                                    int idxTex = rel.IndexOf("textures/", StringComparison.OrdinalIgnoreCase);
-                                    if (idxTex >= 0)
-                                        rel = rel.Substring(idxTex + "textures/".Length);
-                                    rel = rel.TrimStart('/');
-
-                                    if (string.IsNullOrWhiteSpace(rel))
-                                        continue;
-
-                                    string abs = ItemYamlParserWorker.BuildItemsAdderContentTexturePath(itemsAdderFolder, itemNamespace!, rel);
-                                    customItem.TexturePath = abs;
-                                    LogInfo(itemNamespace, itemId, "auto-assigned texture file " + customItem.TexturePath);
-
-                                    if (JsonParserWorker.IsVanillaTexturePath(normalizedAsset))
+                                    if ((string.IsNullOrWhiteSpace(customItem.TexturePath) || !File.Exists(customItem.TexturePath)))
                                     {
-                                        if (!string.IsNullOrWhiteSpace(versionDir))
-                                            LogInfo(itemNamespace, itemId, "vanilla texture will be taken from version " + selectedVersion + " (" + versionDir + ")");
-                                        else
-                                            LogInfo(itemNamespace, itemId, "vanilla texture detected but no version selected");
-                                    }
+                                        customItem.TexturePath = texAbs;
+                                        LogInfo(itemNamespace, itemId, "auto-assigned texture file " + customItem.TexturePath);
 
-                                    break;
+                                        if (JsonParserWorker.IsVanillaTexturePath(normalizedAsset))
+                                        {
+                                            if (!string.IsNullOrWhiteSpace(versionDir))
+                                                LogInfo(itemNamespace, itemId, "vanilla texture will be taken from version " + selectedVersion + " (" + versionDir + ")");
+                                            else
+                                                LogInfo(itemNamespace, itemId, "vanilla texture detected but no version selected");
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    ConsoleWorker.Write.Line("warn", itemNamespace + ":" + itemId + " missing texture for slot " + kv.Key + ": " + normalizedAsset);
                                 }
                             }
 
-                            if (string.IsNullOrWhiteSpace(customItem.IconPath) && !string.IsNullOrWhiteSpace(customItem.TexturePath))
+                            if (string.IsNullOrWhiteSpace(customItem.IconPath) &&
+                                !string.IsNullOrWhiteSpace(customItem.TexturePath) &&
+                                File.Exists(customItem.TexturePath))
                             {
                                 customItem.IconPath = customItem.TexturePath;
                                 LogInfo(itemNamespace, itemId, "auto-assigned icon from texture " + customItem.IconPath);
@@ -261,14 +276,19 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             {
                                 // Non-vanilla: build absolute IA texture path
                                 if (ItemYamlParserWorker.TryGet2DTexturePathNormalized(props, out var relTex) &&
-                                    !string.IsNullOrWhiteSpace(relTex) &&
-                                    !string.IsNullOrWhiteSpace(itemNamespace))
+                                    !string.IsNullOrWhiteSpace(relTex))
                                 {
-                                    string abs = ItemYamlParserWorker.BuildItemsAdderContentTexturePath(itemsAdderFolder, itemNamespace!, relTex);
-                                    customItem.TexturePath = abs;
-                                    customItem.IconPath = abs;
+                                    if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, relTex, out var abs, itemNamespace) && File.Exists(abs))
+                                    {
+                                        customItem.TexturePath = abs;
+                                        customItem.IconPath = abs;
 
-                                    LogInfo(itemNamespace, itemId, "2D texture " + relTex + " → " + abs);
+                                        LogInfo(itemNamespace, itemId, "2D texture " + relTex + " → " + abs);
+                                    }
+                                    else
+                                    {
+                                        ConsoleWorker.Write.Line("warn", itemNamespace + ":" + itemId + " 2D texture not found: " + relTex);
+                                    }
                                 }
                                 else
                                 {
