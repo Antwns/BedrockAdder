@@ -155,6 +155,40 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                 iconSourceAbs = it.TexturePath;
             }
 
+            // Handle ItemsAdder recolor tint for 2D items (vanilla/custom)
+            if (!it.Is3D && !string.IsNullOrWhiteSpace(it.RecolorTint))
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(iconAbs)!);
+                    string? recolorError = null;
+                    bool recolorSuccess = false;
+
+                    if (it.UsesVanillaTexture)
+                    {
+                        recolorSuccess = VanillaRecolorerWorker.TryBuildRecoloredVanillaTexture(it, selectedVersion, iconAbs, out recolorError);
+                    }
+                    else
+                    {
+                        recolorSuccess = CustomRecolorerWorker.TryBuildRecoloredCustomTexture(it, iconAbs, out recolorError);
+                    }
+
+                    if (recolorSuccess && File.Exists(iconAbs))
+                    {
+                        iconSourceAbs = iconAbs;
+                        ConsoleWorker.Write.Line("info", ns + ":" + id + " recolored icon → " + iconAtlasRel);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(recolorError))
+                    {
+                        ConsoleWorker.Write.Line("warn", ns + ":" + id + " recolor failed: " + recolorError);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ConsoleWorker.Write.Line("warn", ns + ":" + id + " recolor exception: " + ex.Message);
+                }
+            }
+
             // Decide whether we conceptually "have an icon" based on having some path,
             // even if the file does not exist yet (that becomes a separate warning).
             bool hasIconPath = !string.IsNullOrWhiteSpace(iconSourceAbs);

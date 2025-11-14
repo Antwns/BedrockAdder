@@ -72,6 +72,7 @@ namespace BedrockAdder.Renderer
 
                 using (var browser = new ChromiumWebBrowser())
                 {
+                    browser.Size = new System.Drawing.Size(_size, _size);
                     browser.BrowserInitialized += (s, e) => browser.Load(url);
 
                     // wait page signal

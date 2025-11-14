@@ -158,7 +158,41 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         int? customModelData = ArmorYamlParserWorker.TryGetCustomModelDataFromCache(itemsAdderRootPath, armorNamespace, armorId);
 
                         // Only helmets can have a 3D model (if present in YAML)
-                        string? helmetModelPath = armorSlot == "helmet" ? ArmorYamlParserWorker.TryGetHelmetModelPath(itemProps) : null;
+                        string? helmetModelPathRaw = armorSlot == "helmet" ? ArmorYamlParserWorker.TryGetHelmetModelPath(itemProps) : null;
+
+                        string? helmetModelResolved = null;
+                        var helmetTextureMapAbs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                        if (!string.IsNullOrWhiteSpace(helmetModelPathRaw))
+                        {
+                            string normalizedModel = helmetModelPathRaw!.Replace("\\", "/").Trim();
+                            string modelNameForZip = FurnitureYamlParserWorker.NormalizeModelNameForZipLookup(normalizedModel);
+                            string modelAsset = "assets/" + armorNamespace + "/models/" + modelNameForZip + ".json";
+
+                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, modelAsset, out var modelAbs) && File.Exists(modelAbs))
+                            {
+                                helmetModelResolved = modelAbs;
+                            }
+                            else
+                            {
+                                helmetModelResolved = modelAsset;
+                                ConsoleWorker.Write.Line("warn", armorNamespace + ":" + armorId + " helmet model missing on disk: " + modelAsset);
+                            }
+
+                            var helmetTextureMap = JsonParserWorker.ResolveModelTextureMapWithParents(itemsAdderRootPath, armorNamespace, modelNameForZip);
+                            foreach (var kv in helmetTextureMap)
+                            {
+                                string normalizedTexture = kv.Value;
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, normalizedTexture, out var texAbs) && File.Exists(texAbs))
+                                {
+                                    helmetTextureMapAbs[kv.Key] = texAbs;
+                                }
+                                else
+                                {
+                                    ConsoleWorker.Write.Line("warn", armorNamespace + ":" + armorId + " missing helmet texture for slot " + kv.Key + ": " + normalizedTexture);
+                                }
+                            }
+                        }
 
                         var customArmor = new CustomArmor
                         {
@@ -168,11 +202,11 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             Material = armorMaterial,
 
                             // GUI / Held 2D
-                            TexturePath = heldIconTexturePath ?? string.Empty,
-                            IconPath = heldIconTexturePath,
+                            TexturePath = string.Empty,
+                            IconPath = null,
 
                             // Helmet 3D model (optional)
-                            ModelPath = helmetModelPath,
+                            ModelPath = helmetModelResolved,
 
                             CustomModelData = customModelData,
 
@@ -180,6 +214,24 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             ArmorLayerChest = armorLayerChestRel ?? string.Empty,
                             ArmorLayerLegs = armorLayerLegsRel ?? string.Empty
                         };
+
+                        if (!string.IsNullOrWhiteSpace(heldIconTexturePath))
+                        {
+                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, heldIconTexturePath, out var heldIconAbs) && File.Exists(heldIconAbs))
+                            {
+                                customArmor.TexturePath = heldIconAbs;
+                                customArmor.IconPath = heldIconAbs;
+                            }
+                            else
+                            {
+                                ConsoleWorker.Write.Line("warn", armorNamespace + ":" + armorId + " armor icon not found: " + heldIconTexturePath);
+                            }
+                        }
+
+                        foreach (var kv in helmetTextureMapAbs)
+                        {
+                            customArmor.ModelTexturePaths[kv.Key] = kv.Value;
+                        }
 
                         Lists.CustomArmors.Add(customArmor);
                         armorItemsAdded++;
