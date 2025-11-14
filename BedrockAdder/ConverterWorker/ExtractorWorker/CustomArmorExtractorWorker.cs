@@ -217,7 +217,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
 
                         if (!string.IsNullOrWhiteSpace(heldIconTexturePath))
                         {
-                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, heldIconTexturePath, out var heldIconAbs) && File.Exists(heldIconAbs))
+                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, heldIconTexturePath, out var heldIconAbs, armorNamespace) && File.Exists(heldIconAbs))
                             {
                                 customArmor.TexturePath = heldIconAbs;
                                 customArmor.IconPath = heldIconAbs;

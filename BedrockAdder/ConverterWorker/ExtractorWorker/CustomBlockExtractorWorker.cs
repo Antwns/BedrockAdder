@@ -146,7 +146,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         {
                             if (BlockYamlParserWorker.TryGet2DTexturePathNormalized(props, out var normalized2D))
                             {
-                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalized2D, out var abs) && File.Exists(abs))
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalized2D, out var abs, block.BlockNamespace) && File.Exists(abs))
                                 {
                                     block.TexturePath = abs;
                                     LogInfo(block.BlockNamespace, block.BlockItemID, "assigned texture " + block.TexturePath);
@@ -225,7 +225,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         {
                             if (BlockYamlParserWorker.TryGet2DTexturePathNormalized(props, out var normalized2D))
                             {
-                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalized2D, out var abs) && File.Exists(abs))
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalized2D, out var abs, block.BlockNamespace) && File.Exists(abs))
                                 {
                                     block.TexturePath = abs;
                                     LogInfo(block.BlockNamespace, block.BlockItemID, "assigned texture " + block.TexturePath);

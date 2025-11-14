@@ -98,7 +98,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         string iconPath = string.Empty;
                         if (FurnitureYamlParserWorker.TryGet2DTexturePathNormalized(itemProps, out var iconNormalized) && !string.IsNullOrWhiteSpace(iconNormalized))
                         {
-                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, iconNormalized, out var iconAbs) && File.Exists(iconAbs))
+                            if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderRootPath, iconNormalized, out var iconAbs, furnitureNamespace) && File.Exists(iconAbs))
                             {
                                 iconPath = iconAbs;
                             }

@@ -181,7 +181,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             }
                             else if (ItemYamlParserWorker.TryGet2DTexturePathNormalized(props, out var rel2d))
                             {
-                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, rel2d, out var abs) && File.Exists(abs))
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, rel2d, out var abs, itemNamespace) && File.Exists(abs))
                                 {
                                     customItem.TexturePath = abs;
                                     if (string.IsNullOrWhiteSpace(customItem.IconPath))
@@ -278,7 +278,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                                 if (ItemYamlParserWorker.TryGet2DTexturePathNormalized(props, out var relTex) &&
                                     !string.IsNullOrWhiteSpace(relTex))
                                 {
-                                    if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, relTex, out var abs) && File.Exists(abs))
+                                    if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, relTex, out var abs, itemNamespace) && File.Exists(abs))
                                     {
                                         customItem.TexturePath = abs;
                                         customItem.IconPath = abs;

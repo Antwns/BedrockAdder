@@ -140,6 +140,29 @@ namespace BedrockAdder.FileWorker
                 return false;
             }
 
+            // Namespaced textures (e.g. namespace:items/sword)
+            int colonIndex = tex.IndexOf(':');
+            if (colonIndex > 0)
+            {
+                string ns = tex.Substring(0, colonIndex).Trim();
+                string rel = tex.Substring(colonIndex + 1).TrimStart('/');
+
+                if (string.IsNullOrWhiteSpace(ns) || string.IsNullOrWhiteSpace(rel))
+                {
+                    normalizedPath = string.Empty;
+                    return false;
+                }
+
+                if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                    rel = "textures/" + rel;
+
+                if (string.IsNullOrEmpty(Path.GetExtension(rel)))
+                    rel += ".png";
+
+                normalizedPath = $"assets/{ns}/{rel}";
+                return true;
+            }
+
             // Strip any full asset prefix that might be present
             const string assetsPrefix = "assets/minecraft/textures/";
             const string texturesPrefix = "textures/";

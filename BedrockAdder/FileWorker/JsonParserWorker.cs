@@ -259,16 +259,37 @@ namespace BedrockAdder.FileWorker
             return "assets/minecraft/" + vanilla;
         }
 
-        public static bool TryResolveContentAssetAbsolute(string itemsAdderFolder, string normalizedAssetPath, out string absolutePath)
+        public static bool TryResolveContentAssetAbsolute(
+            string itemsAdderFolder,
+            string normalizedAssetPath,
+            out string absolutePath,
+            string? defaultNamespace = null)
         {
             absolutePath = string.Empty;
 
             if (string.IsNullOrWhiteSpace(itemsAdderFolder) || string.IsNullOrWhiteSpace(normalizedAssetPath))
                 return false;
 
-            string clean = normalizedAssetPath.Replace('\\', '/').TrimStart('/');
+            string clean = normalizedAssetPath.Replace('\\', '/').Trim();
+            if (string.IsNullOrWhiteSpace(clean))
+                return false;
+
+            clean = clean.TrimStart('/');
+
             if (!clean.StartsWith("assets/", StringComparison.OrdinalIgnoreCase))
-                clean = "assets/" + clean;
+            {
+                if (!string.IsNullOrWhiteSpace(defaultNamespace))
+                {
+                    string rel = clean;
+                    if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                        rel = "textures/" + rel;
+                    clean = $"assets/{defaultNamespace}/{rel}";
+                }
+                else
+                {
+                    clean = "assets/" + clean;
+                }
+            }
 
             string withoutAssets = clean.Substring("assets/".Length);
             int firstSlash = withoutAssets.IndexOf('/');
