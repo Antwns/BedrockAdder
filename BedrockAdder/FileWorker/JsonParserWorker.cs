@@ -280,10 +280,9 @@ namespace BedrockAdder.FileWorker
             {
                 if (!string.IsNullOrWhiteSpace(defaultNamespace))
                 {
-                    string rel = clean;
-                    if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
-                        rel = "textures/" + rel;
-                    clean = $"assets/{defaultNamespace}/{rel}";
+                    if (!clean.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                        clean = "textures/" + clean;
+                    clean = $"assets/{defaultNamespace}/{clean}";
                 }
                 else
                 {

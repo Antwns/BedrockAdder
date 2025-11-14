@@ -4,8 +4,6 @@ using System.IO;
 using System.Threading.Tasks;
 using CefSharp;
 using CefSharp.OffScreen;
-using CefSharp.DevTools.Page;
-using ScreenshotImageFormat = CefSharp.DevTools.Page.ScreenshotImageFormat;
 using BedrockAdder.ConverterWorker.ObjectWorker;
 
 namespace BedrockAdder.Renderer
@@ -60,6 +58,7 @@ namespace BedrockAdder.Renderer
                 return false;
             }
 
+            // Build texture map for JS (slot -> file:// URL)
             var texMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var kv in textureSlotsAbs)
             {
@@ -95,33 +94,31 @@ namespace BedrockAdder.Renderer
                 var initialResponse = await initialLoad.ConfigureAwait(false);
                 if (!initialResponse.Success)
                 {
-                    ConsoleWorker.Write.Line("warn", "Initial render load reported failure: " + initialResponse.HttpStatusCode + " (" + initialResponse.ErrorCode + ")");
+                    ConsoleWorker.Write.Line(
+                        "warn",
+                        "Initial render load reported failure: "
+                        + initialResponse.HttpStatusCode + " (" + initialResponse.ErrorCode + ")"
+                    );
+                    // We still try to continue; sometimes this is about:blank.
                 }
 
+                // Try to wait for page + three.js to be "ready"
                 bool ready = await WaitForRenderDoneAsync(browser, TimeSpan.FromSeconds(12)).ConfigureAwait(false);
                 if (!ready)
                 {
-                    ConsoleWorker.Write.Line("warn", "Render timeout or page init failed.");
-                    return false;
+                    // Do NOT bail out completely – still attempt a screenshot.
+                    ConsoleWorker.Write.Line("warn", "Render timeout or page init flag not detected, capturing anyway.");
                 }
 
+                // Capture screenshot (CefSharp OffScreen returns PNG bytes directly)
                 var screenshot = await browser.CaptureScreenshotAsync().ConfigureAwait(false);
-                if (screenshot == null || string.IsNullOrWhiteSpace(screenshot.Data))
+                if (screenshot == null || screenshot.Length == 0)
                 {
                     ConsoleWorker.Write.Line("warn", "CaptureScreenshotAsync returned no data.");
                     return false;
                 }
 
-                byte[] pngBytes;
-                try
-                {
-                    pngBytes = Convert.FromBase64String(screenshot.Data);
-                }
-                catch (FormatException)
-                {
-                    ConsoleWorker.Write.Line("warn", "Invalid screenshot data returned from renderer.");
-                    return false;
-                }
+                byte[] pngBytes = screenshot;
 
                 Directory.CreateDirectory(Path.GetDirectoryName(iconPngAbs) ?? AppContext.BaseDirectory);
                 File.WriteAllBytes(iconPngAbs, pngBytes);
@@ -139,11 +136,10 @@ namespace BedrockAdder.Renderer
             {
                 WindowlessRenderingEnabled = true,
                 PersistSessionCookies = false,
-                // PersistUserPreferences — remove; not available on this version
                 LogSeverity = LogSeverity.Disable
             };
 
-            // allow local file textures
+            // Allow local file textures
             settings.CefCommandLineArgs.Add("allow-file-access-from-files", "1");
             settings.CefCommandLineArgs.Add("disable-gpu", "1");
             settings.CefCommandLineArgs.Add("disable-gpu-compositing", "1");
@@ -155,6 +151,7 @@ namespace BedrockAdder.Renderer
         private static async Task<bool> WaitForRenderDoneAsync(ChromiumWebBrowser browser, TimeSpan timeout)
         {
             var start = DateTime.UtcNow;
+
             while (DateTime.UtcNow - start < timeout)
             {
                 if (!browser.IsBrowserInitialized || browser.GetBrowser() == null)
@@ -169,11 +166,25 @@ namespace BedrockAdder.Renderer
                     continue;
                 }
 
-                var resp = await browser.EvaluateScriptAsync("window.renderDone === true").ConfigureAwait(false);
-                if (resp?.Success == true && resp.Result is bool b && b) return true;
+                // Try both:
+                // 1) A custom window.renderDone flag (if render.html sets it)
+                // 2) Fallback: document.readyState === "complete"
+                var resp = await browser.EvaluateScriptAsync(
+                    "(function() {" +
+                    "  if (window.renderDone === true) return true;" +
+                    "  if (document && document.readyState === 'complete') return true;" +
+                    "  return false;" +
+                    "})()"
+                ).ConfigureAwait(false);
+
+                if (resp?.Success == true && resp.Result is bool b && b)
+                {
+                    return true;
+                }
 
                 await Task.Delay(50).ConfigureAwait(false);
             }
+
             return false;
         }
 
