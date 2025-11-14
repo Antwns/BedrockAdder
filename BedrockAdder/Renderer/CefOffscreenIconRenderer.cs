@@ -105,7 +105,7 @@ namespace BedrockAdder.Renderer
                     return false;
                 }
 
-                var screenshot = await browser.CaptureScreenshotAsync(ignoreExistingScreenshot: true, format: ScreenshotImageFormat.Png).ConfigureAwait(false);
+                var screenshot = await browser.CaptureScreenshotAsync(ignoreExistingScreenshot: true).ConfigureAwait(false);
                 if (screenshot == null || string.IsNullOrWhiteSpace(screenshot.Data))
                 {
                     ConsoleWorker.Write.Line("warn", "CaptureScreenshotAsync returned no data.");
