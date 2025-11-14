@@ -4,6 +4,8 @@ using System.IO;
 using System.Threading.Tasks;
 using CefSharp;
 using CefSharp.OffScreen;
+using CefSharp.DevTools.Page;
+using ScreenshotImageFormat = CefSharp.DevTools.Page.ScreenshotImageFormat;
 using BedrockAdder.ConverterWorker.ObjectWorker;
 
 namespace BedrockAdder.Renderer
