@@ -14,6 +14,19 @@ namespace BedrockAdder.Library
         public string PlacedBlockType { get; set; } // The block type when placed in the world such as mushroom block, noteblock, chorus fruit or string
         public int? CustomModelData { get; set; } // Optional CMD
 
+        // Does the block use per-face textures?
+        public bool PerFaceTexture { get; set; } = false;
+
+        // Per-face texture paths (absolute) <side, texture path>
+        public Dictionary<string, string> FaceTexturePaths { get; } = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+
+        // Logical asset IDs for model textures (works for IA + vanilla).
+        // Example values:
+        //   "0" -> "assets/workbenches/textures/amethonium_anvil/amethonium_anvil.png"
+        //   "0" -> "assets/minecraft/textures/block/smithing_table_top.png"
+        public Dictionary<string, string> ModelTextureAssets { get; } = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+
+        // Absolute PNG paths for model textures we can resolve *now* (typically IA contents).
         public Dictionary<string, string> ModelTexturePaths { get; } = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
     }
 }

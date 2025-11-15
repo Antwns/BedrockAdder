@@ -27,15 +27,11 @@ namespace BedrockAdder.Renderer
         }
 
         // Public sync entry – internally runs async logic on a worker thread
-        public bool TryRenderIcon(string javaModelPath,
-                                  IReadOnlyDictionary<string, string> textureSlotsAbs,
-                                  string iconPngAbs)
+        public bool TryRenderIcon(string javaModelPath,IReadOnlyDictionary<string, string> textureSlotsAbs,string iconPngAbs)
         {
             try
             {
-                return Task.Run(() => TryRenderIconInternalAsync(javaModelPath, textureSlotsAbs, iconPngAbs))
-                           .GetAwaiter()
-                           .GetResult();
+                return Task.Run(() => TryRenderIconInternalAsync(javaModelPath, textureSlotsAbs, iconPngAbs)).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {

@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using YamlDotNet.RepresentationModel;
 
 namespace BedrockAdder.FileWorker
@@ -134,7 +136,46 @@ namespace BedrockAdder.FileWorker
             return false;
         }
 
-        internal static bool TryGet2DTexturePathNormalized(YamlMappingNode itemProps, out string normalizedPath)
+        /// <summary>
+        /// Normalize a block texture reference (from YAML) into a normalized asset path:
+        ///  - If it has a namespace (ns:path), delegate to JsonParserWorker.NormalizeTexturePathFromModelValue.
+        ///  - If it has no namespace:
+        ///     - If it looks like "block/foo" or "item/foo", treat as vanilla (minecraft).
+        ///     - Otherwise treat as ItemsAdder content under this blockNamespace.
+        /// </summary>
+        internal static string NormalizeBlockTextureModelValue(string modelValue, string blockNamespace)
+        {
+            if (string.IsNullOrWhiteSpace(modelValue))
+                return string.Empty;
+
+            string raw = modelValue.Replace("\\", "/").Trim();
+
+            // explicit namespace → let JsonParserWorker decide (handles minecraft: and custom ns)
+            // (use IndexOf instead of Contains with StringComparison to support older frameworks)
+            if (raw.IndexOf(':') >= 0)
+            {
+                return JsonParserWorker.NormalizeTexturePathFromModelValue(raw);
+            }
+
+            // If it looks like block/... or item/... with no namespace, assume vanilla minecraft
+            if (raw.StartsWith("block/", StringComparison.OrdinalIgnoreCase) ||
+                raw.StartsWith("item/", StringComparison.OrdinalIgnoreCase) ||
+                raw.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonParserWorker.NormalizeTexturePathFromModelValue(raw);
+            }
+
+            // ItemsAdder-style relative path (e.g. "advanced_generator/advanced_generator_top")
+            string rel = raw.TrimStart('/');
+            if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                rel = "textures/" + rel;
+            if (!rel.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                rel += ".png";
+
+            return "assets/" + blockNamespace + "/" + rel;
+        }
+
+        internal static bool TryGet2DTexturePathNormalized(string blockNamespace, YamlMappingNode itemProps, out string normalizedPath)
         {
             normalizedPath = string.Empty;
 
@@ -142,7 +183,7 @@ namespace BedrockAdder.FileWorker
                 TryGetScalar(graphics!, "texture", out var gfxTex) &&
                 !string.IsNullOrWhiteSpace(gfxTex))
             {
-                normalizedPath = JsonParserWorker.NormalizeTexturePathFromModelValue(gfxTex!);
+                normalizedPath = NormalizeBlockTextureModelValue(gfxTex!, blockNamespace);
                 return !string.IsNullOrWhiteSpace(normalizedPath);
             }
 
@@ -150,11 +191,53 @@ namespace BedrockAdder.FileWorker
                 TryGetScalar(resource!, "texture_path", out var resTex) &&
                 !string.IsNullOrWhiteSpace(resTex))
             {
-                normalizedPath = JsonParserWorker.NormalizeTexturePathFromModelValue(resTex!);
+                normalizedPath = NormalizeBlockTextureModelValue(resTex!, blockNamespace);
                 return !string.IsNullOrWhiteSpace(normalizedPath);
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Reads graphics.textures mapping (up/down/north/south/east/west -> texture path),
+        /// normalizes each value into an assets/... path using blockNamespace.
+        /// Returns true if at least one face entry was found.
+        /// </summary>
+        internal static bool TryGetPerFaceTexturesNormalized(string blockNamespace, YamlMappingNode itemProps, out Dictionary<string, string> faceMap)
+        {
+            faceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            if (!TryGetMapping(itemProps, "graphics", out var graphics) || graphics == null)
+                return false;
+
+            if (!graphics.Children.TryGetValue(new YamlScalarNode("textures"), out var texturesNode) ||
+                texturesNode is not YamlMappingNode texturesMap)
+            {
+                return false;
+            }
+
+            bool any = false;
+
+            foreach (var kv in texturesMap.Children)
+            {
+                if (kv.Key is not YamlScalarNode faceKeyNode || kv.Value is not YamlScalarNode texValNode)
+                    continue;
+
+                string? faceName = faceKeyNode.Value;
+                string? rawPath = texValNode.Value;
+
+                if (string.IsNullOrWhiteSpace(faceName) || string.IsNullOrWhiteSpace(rawPath))
+                    continue;
+
+                string normalized = NormalizeBlockTextureModelValue(rawPath, blockNamespace);
+                if (string.IsNullOrWhiteSpace(normalized))
+                    continue;
+
+                faceMap[faceName.Trim()] = normalized;
+                any = true;
+            }
+
+            return any;
         }
     }
 }

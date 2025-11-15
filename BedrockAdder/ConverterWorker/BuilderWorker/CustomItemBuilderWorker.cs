@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -88,10 +87,65 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
 
             if (it.Is3D)
             {
-                // Build the 3D model / geometry & copy model textures.
-                // CHANGED: no renderer for ModelBuilderWorker; icons are handled by ModelImageBuilderWorker instead.
+                // 1) Build the 3D model / geometry & collect model textures.
+                // Icons are handled by ModelImageBuilderWorker; we pass no renderer here.
                 var built = ModelBuilderWorker.Build(it, itemsAdderFolder, iconRenderer: null);
 
+                // 1a) Write Bedrock geometry (.geo.json)
+                if (!string.IsNullOrWhiteSpace(built.GeometryJson))
+                {
+                    string geoAbs = Path.Combine(session.PackRoot, built.GeometryOutRel.Replace('/', Path.DirectorySeparatorChar));
+                    string? geoDir = Path.GetDirectoryName(geoAbs);
+                    if (!string.IsNullOrWhiteSpace(geoDir))
+                        Directory.CreateDirectory(geoDir);
+
+                    try
+                    {
+                        File.WriteAllText(geoAbs, built.GeometryJson, System.Text.Encoding.UTF8);
+                        ConsoleWorker.Write.Line("info", ns + ":" + id + " geometry → " + built.GeometryOutRel);
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleWorker.Write.Line("warn", ns + ":" + id + " failed writing geometry: " + geoAbs + " ex=" + ex.Message);
+                    }
+                }
+                else
+                {
+                    if (built.Notes.Count > 0)
+                    {
+                        foreach (var note in built.Notes)
+                            ConsoleWorker.Write.Line("warn", ns + ":" + id + " geometry note: " + note);
+                    }
+                    else
+                    {
+                        ConsoleWorker.Write.Line("warn", ns + ":" + id + " has no GeometryJson produced by ModelBuilderWorker.");
+                    }
+                }
+
+                // 1b) Write Bedrock attachable (.json)
+                if (!string.IsNullOrWhiteSpace(built.AttachableJson))
+                {
+                    string attAbs = Path.Combine(session.PackRoot, built.AttachableOutRel.Replace('/', Path.DirectorySeparatorChar));
+                    string? attDir = Path.GetDirectoryName(attAbs);
+                    if (!string.IsNullOrWhiteSpace(attDir))
+                        Directory.CreateDirectory(attDir);
+
+                    try
+                    {
+                        File.WriteAllText(attAbs, built.AttachableJson, System.Text.Encoding.UTF8);
+                        ConsoleWorker.Write.Line("info", ns + ":" + id + " attachable → " + built.AttachableOutRel);
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleWorker.Write.Line("warn", ns + ":" + id + " failed writing attachable: " + attAbs + " ex=" + ex.Message);
+                    }
+                }
+                else
+                {
+                    ConsoleWorker.Write.Line("warn", ns + ":" + id + " has no AttachableJson produced by ModelBuilderWorker.");
+                }
+
+                // 1c) Copy model textures into the pack
                 if (built.TexturesToCopy != null)
                 {
                     foreach (var (src, dstRel) in built.TexturesToCopy)
@@ -120,7 +174,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
 
                 bool hasModel = !string.IsNullOrWhiteSpace(it.ModelPath) && File.Exists(it.ModelPath);
 
-                // 1) Primary: render a snapshot into the *pack session folder*.
+                // 2) Primary: render a snapshot into the *pack session folder*.
                 if (hasModel)
                 {
                     string iconWorkRoot = Path.Combine(session.PackRoot, "_icons");
@@ -148,7 +202,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                     }
                 }
 
-                // 2) Fallback: if ModelBuilderWorker already produced an icon, use that.
+                // 3) Fallback: if ModelBuilderWorker already produced an icon, use that.
                 if (string.IsNullOrWhiteSpace(iconSourceAbs) &&
                     built.IconPngAbs != null &&
                     File.Exists(built.IconPngAbs))
@@ -157,7 +211,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                     ConsoleWorker.Write.Line("info", ns + ":" + id + " fallback icon from ModelBuilderWorker → " + built.IconPngAbs);
                 }
 
-                // 3) Final fallback: use the base texture as a last resort.
+                // 4) Final fallback: use the base texture as a last resort.
                 if (string.IsNullOrWhiteSpace(iconSourceAbs) &&
                     !string.IsNullOrWhiteSpace(it.TexturePath) &&
                     File.Exists(it.TexturePath))
