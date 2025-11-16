@@ -139,9 +139,9 @@ namespace BedrockAdder.FileWorker
         /// <summary>
         /// Normalize a block texture reference (from YAML) into a normalized asset path:
         ///  - If it has a namespace (ns:path), delegate to JsonParserWorker.NormalizeTexturePathFromModelValue.
-        ///  - If it has no namespace:
-        ///     - If it looks like "block/foo" or "item/foo", treat as vanilla (minecraft).
-        ///     - Otherwise treat as ItemsAdder content under this blockNamespace.
+        ///  - If it has no namespace, treat it as ItemsAdder content under this blockNamespace:
+        ///      assets/{blockNamespace}/textures/{value}.png
+        ///   (with "textures/" prefix and ".png" enforced)
         /// </summary>
         internal static string NormalizeBlockTextureModelValue(string modelValue, string blockNamespace)
         {
@@ -151,24 +151,17 @@ namespace BedrockAdder.FileWorker
             string raw = modelValue.Replace("\\", "/").Trim();
 
             // explicit namespace → let JsonParserWorker decide (handles minecraft: and custom ns)
-            // (use IndexOf instead of Contains with StringComparison to support older frameworks)
             if (raw.IndexOf(':') >= 0)
             {
                 return JsonParserWorker.NormalizeTexturePathFromModelValue(raw);
             }
 
-            // If it looks like block/... or item/... with no namespace, assume vanilla minecraft
-            if (raw.StartsWith("block/", StringComparison.OrdinalIgnoreCase) ||
-                raw.StartsWith("item/", StringComparison.OrdinalIgnoreCase) ||
-                raw.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
-            {
-                return JsonParserWorker.NormalizeTexturePathFromModelValue(raw);
-            }
-
-            // ItemsAdder-style relative path (e.g. "advanced_generator/advanced_generator_top")
+            // ItemsAdder-style relative path (e.g. "block/bricks/foo", "my_folder/foo", "textures/foo")
             string rel = raw.TrimStart('/');
+
             if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
                 rel = "textures/" + rel;
+
             if (!rel.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
                 rel += ".png";
 
@@ -179,16 +172,30 @@ namespace BedrockAdder.FileWorker
         {
             normalizedPath = string.Empty;
 
+            // graphics.texture
             if (TryGetMapping(itemProps, "graphics", out var graphics) &&
-                TryGetScalar(graphics!, "texture", out var gfxTex) &&
+                graphics != null &&
+                TryGetScalar(graphics, "texture", out var gfxTex) &&
                 !string.IsNullOrWhiteSpace(gfxTex))
             {
                 normalizedPath = NormalizeBlockTextureModelValue(gfxTex!, blockNamespace);
                 return !string.IsNullOrWhiteSpace(normalizedPath);
             }
 
+            // resource.texture_path
             if (TryGetMapping(itemProps, "resource", out var resource) &&
-                TryGetScalar(resource!, "texture_path", out var resTex) &&
+                resource != null &&
+                TryGetScalar(resource, "texture_path", out var resTexPath) &&
+                !string.IsNullOrWhiteSpace(resTexPath))
+            {
+                normalizedPath = NormalizeBlockTextureModelValue(resTexPath!, blockNamespace);
+                return !string.IsNullOrWhiteSpace(normalizedPath);
+            }
+
+            // resource.texture  (this is what bricks/asphalts/shingles use)
+            if (TryGetMapping(itemProps, "resource", out resource) &&
+                resource != null &&
+                TryGetScalar(resource, "texture", out var resTex) &&
                 !string.IsNullOrWhiteSpace(resTex))
             {
                 normalizedPath = NormalizeBlockTextureModelValue(resTex!, blockNamespace);

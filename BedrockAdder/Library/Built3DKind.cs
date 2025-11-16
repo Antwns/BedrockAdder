@@ -31,6 +31,10 @@ namespace BedrockAdder.Library
         // Textures: copy plan (src abs → dest relative in RP)
         public List<(string SrcAbs, string DstRel)> TexturesToCopy { get; } = new();
 
+        // Backwards-compat alias for older code (e.g. CustomBlockParserWorker)
+        // so existing calls to obj.TextureCopies[...] or .Add(...) still work.
+        public List<(string SrcAbs, string DstRel)> TextureCopies => TexturesToCopy;
+
         // 2D Icon (optional)
         public string? IconPngAbs { get; set; }               // absolute path to PNG (generated or provided)
         public string? IconAtlasRel { get; set; }             // suggested atlas path e.g. textures/items/ns/id.png

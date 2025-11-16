@@ -259,6 +259,49 @@ namespace BedrockAdder.FileWorker
             return "assets/minecraft/" + vanilla;
         }
 
+        // NEW: normalize a YAML model_path into an assets/.../models/... .json path
+        public static string NormalizeModelPathFromYamlValue(string ns, string modelValue)
+        {
+            if (string.IsNullOrWhiteSpace(modelValue)) return string.Empty;
+
+            string raw = modelValue.Replace("\\", "/").Trim();
+
+            // Already an assets/... path
+            if (raw.StartsWith("assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!raw.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    raw += ".json";
+                return raw;
+            }
+
+            // Namespaced: e.g. "minecraft:block/stone" or "myns:models/block/foo"
+            int colon = raw.IndexOf(':');
+            if (colon > 0)
+            {
+                string nsFromVal = raw.Substring(0, colon);
+                string path = raw.Substring(colon + 1).TrimStart('/');
+
+                if (path.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+                    path = path.Substring("models/".Length);
+
+                if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    path = path.Substring(0, path.Length - 5);
+
+                return "assets/" + nsFromVal + "/models/" + path + ".json";
+            }
+
+            // No explicit namespace: treat as path under this ns
+            string rel = raw.TrimStart('/');
+
+            if (rel.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+                rel = rel.Substring("models/".Length);
+
+            if (rel.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                rel = rel.Substring(0, rel.Length - 5);
+
+            return "assets/" + ns + "/models/" + rel + ".json";
+        }
+
         public static bool TryResolveContentAssetAbsolute(
             string itemsAdderFolder,
             string normalizedAssetPath,
