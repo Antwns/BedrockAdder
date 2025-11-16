@@ -21,6 +21,7 @@
         (async function () {
             const url = new URL(window.location.href);
             const size = parseInt(url.searchParams.get('size') || '256', 10);
+            const kind = url.searchParams.get('kind') || 'item'; // "item" | "block" | etc.
             const modelPath = url.searchParams.get('modelPath'); // file:///.../model.json
             const texMapB64 = url.searchParams.get('texMap');    // base64(JSON {slot->file:///...png})
             const bgTransparent = (url.searchParams.get('transparent') || '1') === '1';
@@ -182,17 +183,26 @@
                     const groups = geom.groups || [];
 
                     for (let g = 0; g < Math.min(groups.length, order.length); g++) {
-                        const faceName = order[g];
-                        const face = faces[faceName] || null;
-                        const slotName = face && face.texture ? face.texture : null;
-                        const matIndex = materialIndexFor(slotName);
-                        if (groups[g]) {
-                            groups[g].materialIndex = matIndex;
-                        }
-                        const slot = sanitizeSlotName(slotName);
-                        const tex = (slot && textures[slot]) || fallbackTexture;
-                        applyFaceUVs(geom, groups[g], face, tex);
+                    const faceName = order[g];
+                    const face = faces[faceName] || null;
+                
+                    // Prefer the explicit texture name from the model; if it's missing or "#missing",
+                    // fall back to the face name ("north", "south", etc) so we can drive it via texMap.
+                    let slotName = face && face.texture ? face.texture : null;
+                    if (!slotName || slotName === "#missing") {
+                        slotName = faceName;
                     }
+                
+                    const matIndex = materialIndexFor(slotName);
+                    if (groups[g]) {
+                        groups[g].materialIndex = matIndex;
+                    }
+                
+                    const slot = sanitizeSlotName(slotName);
+                    const tex = (slot && textures[slot]) || fallbackTexture;
+                    applyFaceUVs(geom, groups[g], face, tex);
+                }
+
 
                     const mesh = new THREE.Mesh(geom, materials);
 
@@ -209,14 +219,20 @@
 
                 const hadDisplay = !!(model.display && (model.display.gui || model.display.GUI));
                 applyDisplayTransform(rootGroup, model.display);
+                
+                // If the Java model does NOT define a GUI transform, apply a generic one.
+                // Items (with proper 'display.gui') keep their authored transforms.
+                // Blocks (no display) will use this nice top-front angle.
                 if (!hadDisplay) {
                     rootGroup.rotation.set(
-                        THREE.MathUtils.degToRad(30),
+                        THREE.MathUtils.degToRad(-30), // tilt DOWN instead of UP → we see the top, not the bottom
                         THREE.MathUtils.degToRad(45),
                         0
                     );
                 }
+                
                 scene.add(rootGroup);
+
 
                 const bbox = new THREE.Box3().setFromObject(rootGroup);
                 if (bbox.isEmpty()) {

@@ -248,8 +248,22 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                                 string face = kv.Key;          // e.g. "up", "down", "north", ...
                                 string normalized = kv.Value;   // normalized asset path: assets/ns/textures/... or assets/minecraft/...
 
-                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalized, out var texAbs, block.BlockNamespace) &&
-                                    File.Exists(texAbs))
+                                string? texAbs = null;
+
+                                // 1) ItemsAdder content
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalized, out var iaAbs, block.BlockNamespace) &&
+                                    File.Exists(iaAbs))
+                                {
+                                    texAbs = iaAbs;
+                                }
+                                // 2) Vanilla jar fallback (for assets/minecraft/... paths)
+                                else if (TryResolveVanillaTexture(normalized, out var vanillaAbs) &&
+                                         File.Exists(vanillaAbs))
+                                {
+                                    texAbs = vanillaAbs;
+                                }
+
+                                if (!string.IsNullOrWhiteSpace(texAbs))
                                 {
                                     block.FaceTexturePaths[face] = texAbs;
                                     LogInfo(block.BlockNamespace, block.BlockItemID, "face texture " + face + " → " + texAbs);
@@ -264,6 +278,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                                         " per-face texture not found for " + face + ": " + normalized);
                                 }
                             }
+
 
                             // Choose a stable fallback for main TexturePath/IconPath:
                             // Use the first successfully-resolved face as the "main" 2D representation.
