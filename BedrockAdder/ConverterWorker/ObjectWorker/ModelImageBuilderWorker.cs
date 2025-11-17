@@ -228,11 +228,58 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
 
         private static IReadOnlyDictionary<string, string> BuildTextureMapForBlock(CustomBlock b)
         {
-            if (b.ModelTexturePaths.Count > 0) return b.ModelTexturePaths;
+            // 1) Prefer explicit per-face textures if we have them.
+            //    These come from the YAML:
+            //    graphics:
+            //      textures:
+            //        up:    ns:path_top
+            //        down:  ns:path_bottom
+            //        north: ns:path_side
+            //        ...
+            //
+            // CustomBlockExtractorWorker has already resolved those to absolute PNG paths
+            // in b.FaceTexturePaths and set b.PerFaceTexture = true.
+            if (b.PerFaceTexture && b.FaceTexturePaths != null && b.FaceTexturePaths.Count > 0)
+            {
+                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(b.TexturePath)) map["default"] = b.TexturePath;
-            return map;
+                foreach (var kv in b.FaceTexturePaths)
+                {
+                    var faceName = kv.Key;
+                    var absPath = kv.Value;
+
+                    if (string.IsNullOrWhiteSpace(faceName)) continue;
+                    if (string.IsNullOrWhiteSpace(absPath)) continue;
+
+                    // Normalise face key: "UP" / "Up" / " up " → "up"
+                    faceName = faceName.Trim().ToLowerInvariant(); // up, down, north, south, east, west
+
+                    // Our example cuboid model (and similar) use:
+                    //   textures: { up: ..., down: ..., north: ... }
+                    //   faces: { up: { "texture": "#up" }, north: { "texture": "#north" }, ... }
+                    // The renderer strips the '#' and then looks up textures[faceName].
+                    if (!map.ContainsKey(faceName))
+                    {
+                        map[faceName] = absPath;
+                    }
+                }
+
+                // If we successfully built a per-face map, use it.
+                if (map.Count > 0)
+                    return map;
+            }
+
+            // 2) Otherwise, fall back to textures resolved from the model JSON.
+            //    This covers true 3D models where ModelTexturePaths contains slots like "0", "1", etc.
+            if (b.ModelTexturePaths != null && b.ModelTexturePaths.Count > 0)
+                return b.ModelTexturePaths;
+
+            // 3) Final fallback: single shared texture.
+            var fallback = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(b.TexturePath))
+                fallback["default"] = b.TexturePath;
+
+            return fallback;
         }
 
         private static IReadOnlyDictionary<string, string> BuildTextureMapForFurniture(CustomFurniture f)
