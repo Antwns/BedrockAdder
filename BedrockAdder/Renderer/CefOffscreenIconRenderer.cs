@@ -27,7 +27,7 @@ namespace BedrockAdder.Renderer
         }
 
         // Public sync entry – internally runs async logic on a worker thread
-        public bool TryRenderIcon(string javaModelPath,IReadOnlyDictionary<string, string> textureSlotsAbs,string iconPngAbs)
+        public bool TryRenderIcon(string javaModelPath, IReadOnlyDictionary<string, string> textureSlotsAbs, string iconPngAbs)
         {
             try
             {
@@ -40,9 +40,10 @@ namespace BedrockAdder.Renderer
             }
         }
 
-        private async Task<bool> TryRenderIconInternalAsync(string javaModelPath,
-                                                            IReadOnlyDictionary<string, string> textureSlotsAbs,
-                                                            string iconPngAbs)
+        private async Task<bool> TryRenderIconInternalAsync(
+            string javaModelPath,
+            IReadOnlyDictionary<string, string> textureSlotsAbs,
+            string iconPngAbs)
         {
             if (!File.Exists(_renderHtmlAbs))
             {
@@ -69,6 +70,20 @@ namespace BedrockAdder.Renderer
             {
                 ConsoleWorker.Write.Line("warn", "Model path is not a .json file: " + modelFullPath);
             }
+
+            // --- NEW: read the model JSON and send it inline as base64 ---
+            string modelJson;
+            try
+            {
+                modelJson = File.ReadAllText(modelFullPath);
+            }
+            catch (Exception ex)
+            {
+                ConsoleWorker.Write.Line("error", "Failed to read model JSON: " + ex.Message);
+                return false;
+            }
+
+            string modelJsonB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(modelJson));
 
             // Build texture map for JS (slot -> file:// URL)
             var texMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -111,10 +126,13 @@ namespace BedrockAdder.Renderer
             string modelFileUrl = new Uri(modelFullPath).AbsoluteUri;
             string htmlFileUrl = new Uri(Path.GetFullPath(_renderHtmlAbs)).AbsoluteUri;
 
+            // NOTE: we keep modelPath for debugging/fallback in JS, but actual geometry
+            // comes from modelJson (base64).
             string url = htmlFileUrl
                 + "?size=" + _size
                 + "&transparent=" + (_transparent ? "1" : "0")
                 + "&modelPath=" + Uri.EscapeDataString(modelFileUrl)
+                + "&modelJson=" + Uri.EscapeDataString(modelJsonB64)
                 + "&texMap=" + Uri.EscapeDataString(texMapB64);
 
             ConsoleWorker.Write.Line("info", "CEF loading URL: " + url);
@@ -139,9 +157,11 @@ namespace BedrockAdder.Renderer
                     ConsoleWorker.Write.Line("warn", "Render timeout or page init flag not detected, capturing anyway.");
                 }
 
-                ConsoleWorker.Write.Line("info",
+                ConsoleWorker.Write.Line(
+                    "info",
                     "Before screenshot: IsBrowserInitialized=" + browser.IsBrowserInitialized +
-                    " CanExecuteJavascriptInMainFrame=" + browser.CanExecuteJavascriptInMainFrame);
+                    " CanExecuteJavascriptInMainFrame=" + browser.CanExecuteJavascriptInMainFrame
+                );
 
                 // Capture screenshot as PNG bytes
                 var screenshot = await browser.CaptureScreenshotAsync().ConfigureAwait(false);
@@ -153,7 +173,7 @@ namespace BedrockAdder.Renderer
 
                 byte[] pngBytes = screenshot;
 
-                // *** FIX: Flip vertically so icons aren't upside down ***
+                // Flip vertically so icons aren't upside down
                 try
                 {
                     using (var msIn = new MemoryStream(pngBytes))
@@ -171,7 +191,6 @@ namespace BedrockAdder.Renderer
                 catch (Exception ex)
                 {
                     ConsoleWorker.Write.Line("warn", "Failed to flip icon vertically: " + ex.Message);
-                    // If flip fails, we still fall back to original screenshot bytes.
                 }
 
                 string iconDir = Path.GetDirectoryName(iconPngAbs) ?? AppContext.BaseDirectory;
