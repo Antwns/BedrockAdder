@@ -83,32 +83,52 @@
         return ["east", "west", "up", "down", "south", "north"];
         }
 
+        // Flag to distinguish atlas-based models (3D items) vs our simple cuboid blocks
+        let modelHasTextureAtlas = false;
+
+        // Apply UVs from the model JSON only when we have a texture atlas (3D items)
         function applyFaceUVs(geom, group, face, texture) {
+        if (!modelHasTextureAtlas) {
+        // Blocks / simple cuboids: rely on BoxGeometry's built-in UVs
+        return;
+        }
+
         if (!geom || !group) return;
         const uvAttr = geom.attributes.uv;
         if (!uvAttr) return;
 
-        const tex = texture || null;
-        const texW = tex && tex.image && tex.image.width ? tex.image.width : 64;
-        const texH = tex && tex.image && tex.image.height ? tex.image.height : 64;
-
         if (!face || !face.uv || face.uv.length < 4) return;
 
-        const uv = face.uv;
-        const u1 = Math.min(uv[0], uv[2]) / texW;
-        const v1 = Math.min(uv[1], uv[3]) / texH;
-        const u2 = Math.max(uv[0], uv[2]) / texW;
-        const v2 = Math.max(uv[1], uv[3]) / texH;
+        const tex = texture || null;
+        const texW = tex && tex.image && tex.image.width ? tex.image.width : 16;
+        const texH = tex && tex.image && tex.image.height ? tex.image.height : 16;
 
+        const uv = face.uv;
+        const u1 = uv[0] / texW;
+        const v1 = uv[1] / texH;
+        const u2 = uv[2] / texW;
+        const v2 = uv[3] / texH;
+
+        // BoxGeometry in r157 is non-indexed by default:
+        // - groups operate on vertices, not indices
+        // - each face group has 6 vertices (2 triangles) => 12 UV floats
         const start = group.start * 2;
+
         const rect = [
-        u2, v1, u1, v1, u2, v2,
-        u1, v1, u1, v2, u2, v2
+        // first triangle
+        u2, v1,
+        u1, v1,
+        u2, v2,
+        // second triangle
+        u1, v1,
+        u1, v2,
+        u2, v2
         ];
 
         for (let i = 0; i < rect.length && (start + i) < uvAttr.array.length; i++) {
         uvAttr.array[start + i] = rect[i];
         }
+
         uvAttr.needsUpdate = true;
         }
 
@@ -146,6 +166,10 @@
         try {
         const response = await fetch(modelPath);
         const model = await response.json();
+
+        // Detect atlas-based models (like your 3D grenade) vs plain cuboid
+        modelHasTextureAtlas = !!(model.textures && Object.keys(model.textures).length > 0);
+
         const texMap = parseB64Json(texMapB64);
         const textures = await loadTextureDictionary(texMap);
         const fallbackTexture = Object.values(textures).find(t => t) || null;
