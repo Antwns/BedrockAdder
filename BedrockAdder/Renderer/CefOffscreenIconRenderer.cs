@@ -171,35 +171,30 @@ namespace BedrockAdder.Renderer
                     return false;
                 }
 
+                // The HTML/WebGL renderer now outputs correctly oriented images,
+                // so we no longer flip the PNG vertically here.
                 byte[] pngBytes = screenshot;
 
-                // Flip vertically so icons aren't upside down
                 try
                 {
-                    using (var msIn = new MemoryStream(pngBytes))
-                    using (var bmp = new Bitmap(msIn))
+                    string? iconDir = Path.GetDirectoryName(iconPngAbs);
+                    if (string.IsNullOrWhiteSpace(iconDir))
                     {
-                        bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
-
-                        using (var msOut = new MemoryStream())
-                        {
-                            bmp.Save(msOut, System.Drawing.Imaging.ImageFormat.Png);
-                            pngBytes = msOut.ToArray();
-                        }
+                        iconDir = AppContext.BaseDirectory;
                     }
+
+                    Directory.CreateDirectory(iconDir);
+                    File.WriteAllBytes(iconPngAbs, pngBytes);
+
+                    bool exists = File.Exists(iconPngAbs);
+                    ConsoleWorker.Write.Line("info", "Cef icon render → " + iconPngAbs + " (exists=" + exists + ")");
+                    return exists;
                 }
                 catch (Exception ex)
                 {
-                    ConsoleWorker.Write.Line("warn", "Failed to flip icon vertically: " + ex.Message);
+                    ConsoleWorker.Write.Line("error", "Failed to write icon PNG '" + iconPngAbs + "': " + ex.Message);
+                    return false;
                 }
-
-                string iconDir = Path.GetDirectoryName(iconPngAbs) ?? AppContext.BaseDirectory;
-                Directory.CreateDirectory(iconDir);
-                File.WriteAllBytes(iconPngAbs, pngBytes);
-
-                bool exists = File.Exists(iconPngAbs);
-                ConsoleWorker.Write.Line("info", "Cef icon render → " + iconPngAbs + " (exists=" + exists + ")");
-                return exists;
             }
         }
 

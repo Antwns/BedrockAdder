@@ -26,7 +26,25 @@
         const bgTransparent = (url.searchParams.get('transparent') || '1') === '1';
 
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 1000);
+
+        // --- ORTHOGRAPHIC CAMERA FOR GUI-STYLE RENDER ---
+        // Coordinates of Minecraft models live roughly in [0,16] per axis,
+        // with our centering putting them around [-8, +8]. So a 32x32 frustum
+        // is plenty for items/blocks.
+        const frustumSize = 32;
+        const camera = new THREE.OrthographicCamera(
+        -frustumSize / 2,   // left
+        frustumSize / 2,   // right
+        frustumSize / 2,   // top
+        -frustumSize / 2,   // bottom
+        0.1,
+        1000
+        );
+
+        // Look straight at the origin along +Z (Three.js default forward is -Z,
+        // but we just put the camera at +Z looking at (0,0,0)).
+        camera.position.set(0, 0, 64);
+        camera.lookAt(0, 0, 0);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: bgTransparent });
         renderer.setPixelRatio(1);
@@ -43,16 +61,21 @@
         scene.add(dir);
 
         function parseB64Json(b64) {
-        try { return JSON.parse(atob(b64 || '')); } catch { return {}; }
+        try { return JSON.parse(atob(b64 || "")); } catch { return {}; }
         }
 
         function loadTexture(urlStr) {
         return new Promise((resolve) => {
         const loader = new THREE.TextureLoader();
-        loader.load(urlStr, tex => {
+        loader.load(
+        urlStr,
+        tex => {
         tex.flipY = false;
         resolve(tex);
-        }, undefined, () => resolve(null));
+        },
+        undefined,
+        () => resolve(null)
+        );
         });
         }
 
@@ -72,8 +95,10 @@
         const h = (t[1] - f[1]);
         const d = (t[2] - f[2]);
         const geom = new THREE.BoxGeometry(w, h, d);
+
+        // Center the element in [-8, +8] on all axes (no Y flip, MC-style)
         const cx = (f[0] + t[0]) / 2 - 8;
-        const cy = 24 - (f[1] + t[1]) / 2;
+        const cy = (f[1] + t[1]) / 2 - 8;
         const cz = (f[2] + t[2]) / 2 - 8;
         geom.translate(cx, cy, cz);
         return geom;
@@ -133,20 +158,27 @@
         }
 
         function sanitizeSlotName(slot) {
-        if (typeof slot !== 'string') return '';
-        return slot.startsWith('#') ? slot.substring(1) : slot;
+        if (typeof slot !== "string") return "";
+        return slot.startsWith("#") ? slot.substring(1) : slot;
         }
 
+        // Apply ONLY the display.gui transform from the model.
+        // No extra adjX/adjY/adjZ, no axis sign hacks.
         function applyDisplayTransform(group, displayRoot) {
         if (!displayRoot) return;
         const gui = displayRoot.gui || displayRoot.GUI || null;
         if (!gui) return;
 
-        const rot = Array.isArray(gui.rotation) ? gui.rotation : Array.isArray(gui.Rotation) ? gui.Rotation : null;
-        const trans = Array.isArray(gui.translation) ? gui.translation : Array.isArray(gui.Translation) ? gui.Translation : null;
-        const scale = Array.isArray(gui.scale) ? gui.scale : Array.isArray(gui.Scale) ? gui.Scale : null;
+        const rot = Array.isArray(gui.rotation) ? gui.rotation :
+        Array.isArray(gui.Rotation) ? gui.Rotation : null;
+        const trans = Array.isArray(gui.translation) ? gui.translation :
+        Array.isArray(gui.Translation) ? gui.Translation : null;
+        const scale = Array.isArray(gui.scale) ? gui.scale :
+        Array.isArray(gui.Scale) ? gui.Scale : null;
 
         if (rot && rot.length === 3) {
+        // Direct mapping from Blockbench/Minecraft rotations:
+        // [x, y, z] degrees → Three.js Euler (XYZ order) in radians.
         group.rotation.set(
         THREE.MathUtils.degToRad(rot[0]),
         THREE.MathUtils.degToRad(rot[1]),
@@ -180,7 +212,7 @@
         function materialIndexFor(slotName) {
         const slot = sanitizeSlotName(slotName);
         const tex = (slot && textures[slot]) || fallbackTexture;
-        const key = tex ? tex.uuid : '__flat__';
+        const key = tex ? tex.uuid : "__flat__";
 
         if (!materialCache.has(key)) {
         const mat = new THREE.MeshStandardMaterial({
@@ -221,44 +253,25 @@
         const mesh = new THREE.Mesh(geom, materials);
 
         if (el.rotation) {
-        const axis = el.rotation.axis || 'y';
+        const axis = el.rotation.axis || "y";
         const angle = (el.rotation.angle || 0) * Math.PI / 180;
-        if (axis === 'x') mesh.rotateX(angle);
-        else if (axis === 'y') mesh.rotateY(angle);
-        else if (axis === 'z') mesh.rotateZ(angle);
+        if (axis === "x") mesh.rotateX(angle);
+        else if (axis === "y") mesh.rotateY(angle);
+        else if (axis === "z") mesh.rotateZ(angle);
         }
 
         rootGroup.add(mesh);
         });
 
-        const hadDisplay = !!(model.display && (model.display.gui || model.display.GUI));
+        // Apply ONLY model.display.gui transform; if missing, we leave rootGroup as-is.
         applyDisplayTransform(rootGroup, model.display);
-        if (!hadDisplay) {
-        rootGroup.rotation.set(
-        THREE.MathUtils.degToRad(30),
-        THREE.MathUtils.degToRad(45),
-        0
-        );
-        }
+
         scene.add(rootGroup);
 
-        const bbox = new THREE.Box3().setFromObject(rootGroup);
-        if (bbox.isEmpty()) {
-        camera.position.set(16, 16, 16);
-        camera.lookAt(0, 0, 0);
-        } else {
-        const sizeVec = bbox.getSize(new THREE.Vector3());
-        const center = bbox.getCenter(new THREE.Vector3());
-
-        const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z, 1);
-        const distance = maxDim * 1.9;
-        camera.position.set(center.x + distance, center.y + distance, center.z + distance);
-        camera.lookAt(center);
-        }
-
+        // Render once
         renderer.render(scene, camera);
 
-        if (typeof renderer.dispose === 'function') {
+        if (typeof renderer.dispose === "function") {
         renderer.dispose();
         }
 

@@ -126,7 +126,7 @@ namespace BedrockAdder.Library
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Generating bedrock items...");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
-                    CustomItemBuilderWorker.BuildCustomItems(currentSession, 64, ItemsAdderDir);
+                    CustomItemBuilderWorker.BuildCustomItems(currentSession, 128, ItemsAdderDir);
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Finished generating bedrock items!");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
@@ -135,7 +135,7 @@ namespace BedrockAdder.Library
                     ConsoleWorker.Write.Line("info", "Generating bedrock blocks...");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     Task.Delay(4000).Wait();
-                    CustomBlockBuilderWorker.BuildCustomBlocks(currentSession, 64, ItemsAdderDir);
+                    CustomBlockBuilderWorker.BuildCustomBlocks(currentSession, 128, ItemsAdderDir);
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Finished generating bedrock blocks!");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
