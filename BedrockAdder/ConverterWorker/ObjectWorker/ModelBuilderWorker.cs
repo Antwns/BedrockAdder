@@ -61,14 +61,34 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
             foreach (var kv in furniture.TexturePaths)
                 texMap[kv.Key] = kv.Value;
 
-            return BuildCore(
-                kind: Built3DKind.Furniture,
+            AtlasBuildResult? atlasResult = null;
+
+            // Build an atlas only if we have a model path
+            if (!string.IsNullOrWhiteSpace(furniture.ModelPath))
+            {
+                string modelDir = Path.GetDirectoryName(furniture.ModelPath!) ?? "";
+                string baseName = string.IsNullOrWhiteSpace(furniture.FurnitureItemID)
+                    ? "furniture_atlas"
+                    : furniture.FurnitureItemID + "_atlas";
+                string atlasFileName = baseName + ".png";
+                string atlasAbs = Path.Combine(modelDir, atlasFileName);
+
+                atlasResult = AtlasBuilderWorker.BuildAtlasFromTextures(
+                    texMap,
+                    atlasAbs,
+                    "furniture " + furniture.FurnitureNamespace + ":" + furniture.FurnitureItemID
+                );
+            }
+
+            // If atlas failed or we had no model, fall back to the old multi-texture behavior.
+            return BuildCoreFurniture(
                 ns: furniture.FurnitureNamespace,
                 id: furniture.FurnitureItemID,
                 javaModelPath: furniture.ModelPath,
                 providedIconAbs: furniture.IconPath,
                 textureSlotsAbs: texMap,
-                iconRenderer: iconRenderer
+                iconRenderer: iconRenderer,
+                atlasResult: atlasResult
             );
         }
 
@@ -211,6 +231,131 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
             return result;
         }
 
+        /// <summary>
+        /// Furniture-specific core builder that can use a baked atlas.
+        /// Falls back to BuildCore(Furniture, ...) if atlasResult is null/failed.
+        /// </summary>
+        private static Built3DObject BuildCoreFurniture(
+            string ns,
+            string id,
+            string javaModelPath,
+            string? providedIconAbs,
+            IReadOnlyDictionary<string, string> textureSlotsAbs,
+            IModelIconRenderer? iconRenderer,
+            AtlasBuildResult? atlasResult)
+        {
+            // Fallback: no atlas or failed -> use original multi-texture path.
+            if (atlasResult == null ||
+                !atlasResult.Success ||
+                string.IsNullOrWhiteSpace(atlasResult.AtlasPngAbs) ||
+                !File.Exists(atlasResult.AtlasPngAbs))
+            {
+                return BuildCore(
+                    kind: Built3DKind.Furniture,
+                    ns: ns,
+                    id: id,
+                    javaModelPath: javaModelPath,
+                    providedIconAbs: providedIconAbs,
+                    textureSlotsAbs: textureSlotsAbs,
+                    iconRenderer: iconRenderer
+                );
+            }
+
+            var result = new Built3DObject
+            {
+                Kind = Built3DKind.Furniture,
+                Namespace = ns,
+                Id = id,
+                BedrockIdentifier = Built3DObjectNaming.MakeIaId(ns, id),
+                GeometryIdentifier = Built3DObjectNaming.MakeGeoId(Built3DKind.Furniture, ns, id),
+                GeometryOutRel = Built3DObjectNaming.MakeGeoRel(ns, id),
+                AttachableOutRel = Built3DObjectNaming.MakeAttachableRel(ns, id),
+                IconAtlasRel = Built3DObjectNaming.MakeIconRel(ns, id)
+            };
+
+            foreach (var note in atlasResult.Notes)
+                result.Notes.Add("Atlas: " + note);
+
+            if (string.IsNullOrWhiteSpace(javaModelPath) || !File.Exists(javaModelPath))
+            {
+                result.Notes.Add("Java model missing: " + javaModelPath);
+                return result;
+            }
+
+            // 1) Parse Java model
+            JObject javaRoot;
+            try
+            {
+                javaRoot = JObject.Parse(File.ReadAllText(javaModelPath));
+            }
+            catch (Exception ex)
+            {
+                result.Notes.Add("Failed to parse Java model: " + ex.Message);
+                return result;
+            }
+
+            // 2) Convert elements -> Bedrock cubes using atlas regions (per-face texture slot)
+            var cubes = ConvertElementsToCubesWithAtlas(
+                javaRoot,
+                result,
+                atlasResult.Regions,
+                atlasResult.AtlasWidth,
+                atlasResult.AtlasHeight
+            );
+
+            if (cubes.Count == 0)
+            {
+                result.Notes.Add("No elements found in Java model (atlas path).");
+                return result;
+            }
+
+            // 3) Build Bedrock geometry JSON with atlas dimensions
+            int texW = atlasResult.AtlasWidth > 0 ? atlasResult.AtlasWidth : 64;
+            int texH = atlasResult.AtlasHeight > 0 ? atlasResult.AtlasHeight : 64;
+            result.GeometryJson = BuildBedrockGeometryJson(result.GeometryIdentifier, cubes, texW, texH);
+
+            // 4) Plan texture copy for atlas only
+            string atlasSrc = atlasResult.AtlasPngAbs!;
+            string atlasDstRel = Built3DObjectNaming.MakeModelTextureRel(ns, Path.GetFileName(atlasSrc));
+            result.TexturesToCopy.Add((atlasSrc, atlasDstRel));
+
+            // 5) Build attachable JSON with a single default texture pointing at the atlas
+            var textureSlotsRel = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["default"] = atlasDstRel
+            };
+
+            result.AttachableJson = BuildAttachableJson(
+                itemIdentifier: result.BedrockIdentifier,
+                geometryIdentifier: result.GeometryIdentifier,
+                textureSlotsRel: textureSlotsRel
+            );
+
+            // 6) Icon: prefer provided; else try renderer using atlas
+            var iconTexMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["default"] = atlasSrc
+            };
+
+            if (!string.IsNullOrWhiteSpace(providedIconAbs) && File.Exists(providedIconAbs))
+            {
+                result.IconPngAbs = providedIconAbs;
+            }
+            else if (iconRenderer != null)
+            {
+                string iconAbs = Path.Combine(Path.GetDirectoryName(javaModelPath) ?? "", id + "_icon.png");
+                bool ok = iconRenderer.TryRenderIcon(javaModelPath, iconTexMap, iconAbs);
+                if (ok && File.Exists(iconAbs)) result.IconPngAbs = iconAbs;
+                else result.Notes.Add("Icon renderer failed or returned no file (atlas path).");
+            }
+            else
+            {
+                result.Notes.Add("No icon provided and no renderer available (atlas path).");
+            }
+
+            return result;
+        }
+
         // ---- helpers ----
 
         private static List<JObject> ConvertElementsToCubes(JObject javaRoot, Built3DObject logTarget)
@@ -239,7 +384,7 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
                     ["size"] = size
                 };
 
-                // rotation/pivot
+                // rotation / pivot
                 var rot = el["rotation"] as JObject;
                 if (rot != null)
                 {
@@ -264,7 +409,7 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
                     cube["rotation"] = new JArray(rx, ry, rz);
                 }
 
-                // per-face UV
+                // per-face UV (+ rotation)
                 var faces = el["faces"] as JObject;
                 if (faces != null)
                 {
@@ -276,11 +421,30 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
                             var uvArr = f["uv"] as JArray;
                             if (uvArr != null && uvArr.Count == 4)
                             {
-                                float u1 = (float)uvArr[0], v1 = (float)uvArr[1], u2 = (float)uvArr[2], v2 = (float)uvArr[3];
-                                float u = Math.Min(u1, u2), v = Math.Min(v1, v2), w = Math.Abs(u2 - u1), h = Math.Abs(v2 - v1);
-                                uv[faceName] = new JObject { ["uv"] = new JArray(u, v), ["uv_size"] = new JArray(w, h) };
+                                float u1 = (float)uvArr[0], v1 = (float)uvArr[1];
+                                float u2 = (float)uvArr[2], v2 = (float)uvArr[3];
+
+                                float u = Math.Min(u1, u2);
+                                float v = Math.Min(v1, v2);
+                                float w = Math.Abs(u2 - u1);
+                                float h = Math.Abs(v2 - v1);
+
+                                var faceUv = new JObject
+                                {
+                                    ["uv"] = new JArray(u, v),
+                                    ["uv_size"] = new JArray(w, h)
+                                };
+
+                                // NEW: propagate face rotation (0, 90, 180, 270)
+                                if (f["rotation"] != null)
+                                {
+                                    int r = (int)f["rotation"];
+                                    if (r == 0 || r == 90 || r == 180 || r == 270)
+                                        faceUv["rotation"] = r;
+                                }
+
+                                uv[faceName] = faceUv;
                             }
-                            // We ignore per-face "rotation" for now; add later if samples require it.
                         }
                     }
                     if (uv.HasValues) cube["uv"] = uv;
@@ -289,7 +453,156 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
                 cubes.Add(cube);
             }
 
-            if (cubes.Count == 0) logTarget.Notes.Add("Converter produced 0 cubes.");
+            if (cubes.Count == 0)
+                logTarget.Notes.Add("Converter produced 0 cubes.");
+
+            return cubes;
+        }
+
+        /// <summary>
+        /// Furniture path: convert elements to cubes while remapping per-face UVs into a baked atlas.
+        /// </summary>
+        private static List<JObject> ConvertElementsToCubesWithAtlas(
+            JObject javaRoot,
+            Built3DObject logTarget,
+            IReadOnlyDictionary<string, AtlasRegion> atlasRegions,
+            int atlasWidth,
+            int atlasHeight)
+        {
+            var cubes = new List<JObject>();
+            var elements = javaRoot["elements"] as JArray;
+            if (elements == null) return cubes;
+
+            const float BASE_SIZE = 16f; // Java UV space (0..16)
+
+            foreach (var e in elements)
+            {
+                if (e is not JObject el) continue;
+
+                var from = el["from"] as JArray;
+                var to = el["to"] as JArray;
+                if (from == null || to == null || from.Count != 3 || to.Count != 3) continue;
+
+                float fx = (float)from[0]; float fy = (float)from[1]; float fz = (float)from[2];
+                float tx = (float)to[0]; float ty = (float)to[1]; float tz = (float)to[2];
+
+                var size = new JArray(tx - fx, ty - fy, tz - fz);
+                var origin = new JArray(fx - 8f, 24f - ty, fz - 8f);
+
+                var cube = new JObject
+                {
+                    ["origin"] = origin,
+                    ["size"] = size
+                };
+
+                // rotation / pivot
+                var rot = el["rotation"] as JObject;
+                if (rot != null)
+                {
+                    float angle = rot["angle"] != null ? (float)rot["angle"]! : 0f;
+                    string axis = rot["axis"]?.ToString() ?? "y";
+                    var ro = rot["origin"] as JArray;
+                    if (ro != null && ro.Count == 3)
+                    {
+                        float rOx = (float)ro[0];
+                        float rOy = (float)ro[1];
+                        float rOz = (float)ro[2];
+                        var pivot = new JArray(rOx - 8f, 24f - rOy, rOz - 8f);
+                        cube["pivot"] = pivot;
+                    }
+                    float rx = 0, ry = 0, rz = 0;
+                    switch (axis)
+                    {
+                        case "x": rx = angle; break;
+                        case "y": ry = angle; break;
+                        case "z": rz = angle; break;
+                    }
+                    cube["rotation"] = new JArray(rx, ry, rz);
+                }
+
+                // per-face UV remapped into atlas (+ rotation)
+                var faces = el["faces"] as JObject;
+                if (faces != null)
+                {
+                    var uvObj = new JObject();
+
+                    foreach (var faceName in new[] { "north", "south", "east", "west", "up", "down" })
+                    {
+                        if (faces[faceName] is not JObject f) continue;
+
+                        var uvArr = f["uv"] as JArray;
+                        if (uvArr == null || uvArr.Count != 4) continue;
+
+                        float u1 = (float)uvArr[0], v1 = (float)uvArr[1];
+                        float u2 = (float)uvArr[2], v2 = (float)uvArr[3];
+
+                        float uLocal = Math.Min(u1, u2);
+                        float vLocal = Math.Min(v1, v2);
+                        float wLocal = Math.Abs(u2 - u1);
+                        float hLocal = Math.Abs(v2 - v1);
+
+                        string texRef = f["texture"]?.ToString() ?? "";
+                        string slot = texRef.StartsWith("#") && texRef.Length > 1
+                            ? texRef.Substring(1)
+                            : texRef;
+
+                        JObject faceUv;
+
+                        if (!string.IsNullOrWhiteSpace(slot) &&
+                            atlasRegions != null &&
+                            atlasRegions.TryGetValue(slot, out var region))
+                        {
+                            float u = region.X + (uLocal / BASE_SIZE) * region.Width;
+                            float v = region.Y + (vLocal / BASE_SIZE) * region.Height;
+                            float w = (wLocal / BASE_SIZE) * region.Width;
+                            float h = (hLocal / BASE_SIZE) * region.Height;
+
+                            faceUv = new JObject
+                            {
+                                ["uv"] = new JArray(u, v),
+                                ["uv_size"] = new JArray(w, h)
+                            };
+                        }
+                        else
+                        {
+                            float u = (uLocal / BASE_SIZE) * atlasWidth;
+                            float v = (vLocal / BASE_SIZE) * atlasHeight;
+                            float w = (wLocal / BASE_SIZE) * atlasWidth;
+                            float h = (hLocal / BASE_SIZE) * atlasHeight;
+
+                            faceUv = new JObject
+                            {
+                                ["uv"] = new JArray(u, v),
+                                ["uv_size"] = new JArray(w, h)
+                            };
+
+                            if (!string.IsNullOrWhiteSpace(slot))
+                            {
+                                logTarget.Notes.Add("Atlas region missing for slot '" + slot + "'; used full-atlas fallback.");
+                            }
+                        }
+
+                        // NEW: propagate face rotation if present
+                        if (f["rotation"] != null)
+                        {
+                            int r = (int)f["rotation"];
+                            if (r == 0 || r == 90 || r == 180 || r == 270)
+                                faceUv["rotation"] = r;
+                        }
+
+                        uvObj[faceName] = faceUv;
+                    }
+
+                    if (uvObj.HasValues)
+                        cube["uv"] = uvObj;
+                }
+
+                cubes.Add(cube);
+            }
+
+            if (cubes.Count == 0)
+                logTarget.Notes.Add("Converter (atlas) produced 0 cubes.");
+
             return cubes;
         }
 

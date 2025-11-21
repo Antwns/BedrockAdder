@@ -37,7 +37,9 @@ namespace BedrockAdder.Library
                     try
                     {
                         System.IO.File.Delete(AppContext.BaseDirectory + "\\log.txt");
-                        ConsoleWorker.Write.Line("info", "Previous log file deleted successfully.");
+                        System.IO.File.Delete(AppContext.BaseDirectory + "\\error_log.txt");
+                        System.IO.File.Delete(AppContext.BaseDirectory + "\\warning_log.txt");
+                        ConsoleWorker.Write.Line("info", "Previous log files deleted successfully.");
                     }
                     catch (Exception ex)
                     {
@@ -122,7 +124,7 @@ namespace BedrockAdder.Library
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Finished generating base bedrock pack!");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
-                    Task.Delay(4000).Wait();
+                    Task.Delay(2000).Wait();
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Generating bedrock items...");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
@@ -130,16 +132,25 @@ namespace BedrockAdder.Library
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Finished generating bedrock items!");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
-                    Task.Delay(4000).Wait();
+                    Task.Delay(2000).Wait();
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Generating bedrock blocks...");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
-                    Task.Delay(4000).Wait();
+                    Task.Delay(2000).Wait();
                     CustomBlockBuilderWorker.BuildCustomBlocks(currentSession, 128, ItemsAdderDir);
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Finished generating bedrock blocks!");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
-                    Task.Delay(4000).Wait();
+                    Task.Delay(2000).Wait();
+                    ConsoleWorker.Write.Line("info", "--------------------------------");
+                    ConsoleWorker.Write.Line("info", "Generating bedrock furniture...");
+                    ConsoleWorker.Write.Line("info", "--------------------------------");
+                    Task.Delay(2000).Wait();
+                    CustomFurnitureBuilderWorker.BuildCustomFurniture(currentSession, 128, ItemsAdderDir);
+                    ConsoleWorker.Write.Line("info", "--------------------------------");
+                    ConsoleWorker.Write.Line("info", "Finished generating bedrock furniture!");
+                    ConsoleWorker.Write.Line("info", "--------------------------------");
+                    Task.Delay(2000).Wait();
                 }
 
                 Application.Current.Dispatcher.Invoke(() =>

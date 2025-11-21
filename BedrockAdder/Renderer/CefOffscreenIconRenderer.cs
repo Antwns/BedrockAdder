@@ -183,16 +183,26 @@ namespace BedrockAdder.Renderer
             string modelFileUrl = new Uri(modelFullPath).AbsoluteUri;
             string htmlFileUrl = new Uri(Path.GetFullPath(_renderHtmlAbs)).AbsoluteUri;
 
-            // NOTE: we keep modelPath for debugging/fallback in JS, but actual geometry
-            // comes from modelJson (base64).
+            // NOTE:
+            // - modelPath is URL-encoded (it may contain spaces etc).
+            // - modelJsonB64 and texMapB64 are NOT passed through Uri.EscapeDataString,
+            //   because they are already safe for a query string and encoding them can
+            //   exceed Uri.EscapeDataString's internal length limits and throw.
             string url = htmlFileUrl
                 + "?size=" + _size
                 + "&transparent=" + (_transparent ? "1" : "0")
                 + "&modelPath=" + Uri.EscapeDataString(modelFileUrl)
-                + "&modelJson=" + Uri.EscapeDataString(modelJsonB64)
-                + "&texMap=" + Uri.EscapeDataString(texMapB64);
+                + "&modelJson=" + modelJsonB64
+                + "&texMap=" + texMapB64;
 
-            ConsoleWorker.Write.Line("info", "CEF loading URL: " + url);
+            // Avoid logging the entire massive URL; just log some summary info.
+            ConsoleWorker.Write.Line(
+                "info",
+                "CEF loading render.html with params: size=" + _size +
+                " transparent=" + (_transparent ? "1" : "0") +
+                " modelJsonLen=" + modelJsonB64.Length +
+                " texMapLen=" + texMapB64.Length
+            );
 
             // Construct browser WITH the URL so it starts loading immediately
             using (var browser = new ChromiumWebBrowser(url))

@@ -112,6 +112,8 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="ConverterWorker\BuilderWorker\CustomBlockBuilderWorker.cs" />
+    <Compile Include="ConverterWorker\BuilderWorker\CustomFurnitureBuilderWorker.cs" />
+    <Compile Include="ConverterWorker\ObjectWorker\AtlasBuilderWorker.cs" />
     <Compile Include="ConverterWorker\ObjectWorker\CustomRecolorerWorker.cs" />
     <Compile Include="ConverterWorker\ObjectWorker\ModelImageBuilderWorker.cs" />
     <Compile Include="ConverterWorker\ObjectWorker\VanillaRecolorerWorker.cs" />

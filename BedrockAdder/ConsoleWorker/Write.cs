@@ -45,6 +45,20 @@ namespace BedrockAdder.ConsoleWorker
             {
                 logWriter.WriteLine(prefix + text);
             }
+            if (messageType == "error")
+            {
+                using (StreamWriter errorWriter = File.AppendText(Environment.CurrentDirectory + "\\error_log.txt"))
+                {
+                    errorWriter.WriteLine(prefix + text);
+                }
+            }
+            if (messageType == "warn" || messageType == "warning")
+            {
+                using (StreamWriter warningWriter = File.AppendText(Environment.CurrentDirectory + "\\warning_log.txt"))
+                {
+                    warningWriter.WriteLine(prefix + text);
+                }
+            }
         }
     }
 }
