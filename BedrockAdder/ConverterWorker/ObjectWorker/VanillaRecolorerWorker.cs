@@ -229,10 +229,16 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
 
         /// <summary>
         /// Build a recolored icon for a vanilla-based armor item.
-        /// Same source lookup as TryBuildRecoloredVanillaTexture, but uses a
-        /// brightness-normalized tint so dark iron icons get a visible color.
+        /// Uses the vanilla texture's *brightness* as a mask over the tint color:
+        /// bright pixels become bright tinted metal, dark pixels become dark tinted metal,
+        /// preserving shading while changing the color.
+        /// Also writes a debug rectangle PNG (flat tint) next to the output file.
         /// </summary>
-        internal static bool TryBuildRecoloredArmorVanillaTexture(CustomArmor armor, string selectedVersion, string outputPngAbs, out string? error)
+        internal static bool TryBuildRecoloredArmorVanillaTexture(
+            CustomArmor armor,
+            string selectedVersion,
+            string outputPngAbs,
+            out string? error)
         {
             error = null;
 
@@ -311,7 +317,71 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
                     using (var stream = entry.Open())
                     using (var image = Image.Load<Rgba32>(stream))
                     {
-                        ApplyMultiplyTintInternal(image, tint);
+                        int width = image.Width;
+                        int height = image.Height;
+
+                        // ----------------------------------------------------
+                        // 1) DEBUG RECTANGLE: flat tint, same size as icon
+                        //    Saved as "<baseName>_debug.png" in the same folder.
+                        // ----------------------------------------------------
+                        string outDir = Path.GetDirectoryName(outputPngAbs) ?? ".";
+                        string baseName = Path.GetFileNameWithoutExtension(outputPngAbs) ?? "armor_icon";
+                        string debugPath = Path.Combine(outDir, baseName + "_debug.png");
+
+                        using (var debugImage = new Image<Rgba32>(width, height))
+                        {
+                            for (int y = 0; y < height; y++)
+                            {
+                                var rowSpan = debugImage.GetPixelRowSpan(y);
+                                for (int x = 0; x < width; x++)
+                                {
+                                    // fully opaque tint pixel
+                                    rowSpan[x] = new Rgba32(tint.R, tint.G, tint.B, 255);
+                                }
+                            }
+
+                            debugImage.Save(debugPath);
+                        }
+
+                        ConsoleWorker.Write.Line(
+                            "info",
+                            armor.ArmorNamespace + ":" + armor.ArmorID +
+                            " debug tint rectangle written → " + debugPath.Replace(Path.DirectorySeparatorChar, '/')
+                        );
+
+                        // ----------------------------------------------------
+                        // 2) REAL ICON: brightness-based tint over vanilla icon
+                        // ----------------------------------------------------
+                        for (int y = 0; y < height; y++)
+                        {
+                            var rowSpan = image.GetPixelRowSpan(y);
+                            for (int x = 0; x < width; x++)
+                            {
+                                var p = rowSpan[x];
+
+                                // Skip fully transparent pixels
+                                if (p.A == 0)
+                                    continue;
+
+                                // Compute brightness from original RGB (simple average).
+                                // Range: 0.0 – 1.0
+                                float brightness = (p.R + p.G + p.B) / (3f * 255f);
+
+                                // Apply brightness to the tint color
+                                byte r = (byte)(tint.R * brightness);
+                                byte g = (byte)(tint.G * brightness);
+                                byte b = (byte)(tint.B * brightness);
+
+                                p.R = r;
+                                p.G = g;
+                                p.B = b;
+                                // Keep original alpha (or modulate with tint.A if desired)
+                                // p.A = (byte)((p.A * tint.A) / 255);
+
+                                rowSpan[x] = p;
+                            }
+                        }
+
                         image.Save(outputPngAbs);
                     }
                 }
