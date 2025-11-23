@@ -16,7 +16,7 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
         /// and CustomItem.RecolorTint. Reads from the Minecraft JAR for the selected
         /// version and writes the tinted result to outputPngAbs.
         /// </summary>
-        internal static bool TryBuildRecoloredVanillaTexture(CustomItem item, string selectedVersion, string outputPngAbs, out string? error)
+        internal static bool TryBuildRecoloredItemVanillaTexture(CustomItem item, string selectedVersion, string outputPngAbs, out string? error)
         {
             error = null;
 
@@ -95,7 +95,7 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
                     using (var stream = entry.Open())
                     using (var image = Image.Load<Rgba32>(stream))
                     {
-                        ApplyMultiplyTint(image, tint);
+                        ApplyMultiplyTintInternal(image, tint);
                         image.Save(outputPngAbs);
                     }
                 }
@@ -188,9 +188,23 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
         }
 
         /// <summary>
-        /// Apply a multiplicative tint to an image in memory.
+        /// Apply a multiplicative tint from source file → destination file.
+        /// Used by CustomRecolorerWorker as well.
         /// </summary>
-        private static void ApplyMultiplyTint(Image<Rgba32> image, Rgba32 tint)
+        internal static void ApplyMultiplyTintExternal(string sourcePngAbs, string destPngAbs, Rgba32 tint)
+        {
+            using (var image = Image.Load<Rgba32>(sourcePngAbs))
+            {
+                ApplyMultiplyTintInternal(image, tint);
+                image.Save(destPngAbs);
+            }
+        }
+
+        /// <summary>
+        /// Apply a multiplicative tint from source file → destination file.
+        /// Used by CustomRecolorerWorker as well.
+        /// </summary>
+        private static void ApplyMultiplyTintInternal(Image<Rgba32> image, Rgba32 tint)
         {
             int width = image.Width;
             int height = image.Height;
@@ -214,50 +228,113 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
         }
 
         /// <summary>
-        /// Apply a multiplicative tint from source file → destination file.
-        /// Used by CustomRecolorerWorker as well.
-        /// </summary>
-        internal static void ApplyMultiplyTint(string sourcePngAbs, string destPngAbs, Rgba32 tint)
-        {
-            using (var image = Image.Load<Rgba32>(sourcePngAbs))
-            {
-                ApplyMultiplyTint(image, tint);
-                image.Save(destPngAbs);
-            }
-        }
-
-        private static int ClampByte(int value)
-        {
-            if (value < 0) return 0;
-            if (value > 255) return 255;
-            return value;
-        }
-
-        /// <summary>
         /// Build a recolored icon for a vanilla-based armor item.
         /// Same source lookup as TryBuildRecoloredVanillaTexture, but uses a
         /// brightness-normalized tint so dark iron icons get a visible color.
         /// </summary>
-        internal static bool TryBuildRecoloredVanillaArmorTexture(
-            string armorNamespace,
-            string armorId,
-            string vanillaTextureId,
-            string recolorTint,
-            string selectedVersion,
-            string outputPngAbs,
-            out string? error)
+        internal static bool TryBuildRecoloredArmorVanillaTexture(CustomArmor armor, string selectedVersion, string outputPngAbs, out string? error)
         {
-            // Reuse the proven item recolor pipeline so armor icons behave
-            // exactly like recolored items.
-            var dummy = new CustomItem
-            {
-                ItemNamespace = armorNamespace,
-                ItemID = armorId,
-                VanillaTextureId = vanillaTextureId,
-                RecolorTint = recolorTint
-            };
+            error = null;
 
-            return TryBuildRecoloredVanillaTexture(dummy, selectedVersion, outputPngAbs, out error);
+            if (armor == null)
+            {
+                error = "VanillaRecolorerWorker: item is null";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(armor.VanillaTextureId))
+            {
+                error = "VanillaRecolorerWorker: VanillaTextureId is empty";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(armor.RecolorTint))
+            {
+                error = "VanillaRecolorerWorker: item has no RecolorTint";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(selectedVersion) ||
+                selectedVersion.Equals("None", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "VanillaRecolorerWorker: no Minecraft version selected for vanilla recolor";
+                return false;
+            }
+
+            if (!TryParseTint(armor.RecolorTint, out var tint))
+            {
+                error = "VanillaRecolorerWorker: failed to parse tint " + armor.RecolorTint;
+                return false;
+            }
+
+            // Resolve JAR path: %APPDATA%\.minecraft\versions\<version>\<version>.jar
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string jarPath = Path.Combine(appData, ".minecraft", "versions", selectedVersion, selectedVersion + ".jar");
+
+            if (!File.Exists(jarPath))
+            {
+                error = "VanillaRecolorerWorker: Minecraft JAR not found at " + jarPath;
+                ConsoleWorker.Write.Line(
+                    "warn",
+                    armor.ArmorNamespace + ":" + armor.ArmorID + " vanilla jar missing: " + jarPath
+                );
+                return false;
+            }
+
+            // Determine the internal PNG path inside the jar
+            string jarRelPath = BuildVanillaTextureJarPath(armor.VanillaTextureId);
+            if (string.IsNullOrWhiteSpace(jarRelPath))
+            {
+                error = "VanillaRecolorerWorker: could not normalize VanillaTextureId " + armor.VanillaTextureId;
+                return false;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(outputPngAbs) ?? ".");
+
+                // Extract + recolor in one go (no need to write an intermediate file)
+                using (var archive = ZipFile.OpenRead(jarPath))
+                {
+                    var entry = archive.GetEntry(jarRelPath.Replace('\\', '/'));
+                    if (entry == null)
+                    {
+                        error = "VanillaRecolorerWorker: entry not found in jar: " + jarRelPath;
+                        ConsoleWorker.Write.Line(
+                            "warn",
+                            armor.ArmorNamespace + ":" + armor.ArmorID +
+                            " vanilla texture entry not found in jar: " + jarRelPath
+                        );
+                        return false;
+                    }
+
+                    using (var stream = entry.Open())
+                    using (var image = Image.Load<Rgba32>(stream))
+                    {
+                        ApplyMultiplyTintInternal(image, tint);
+                        image.Save(outputPngAbs);
+                    }
+                }
+
+                ConsoleWorker.Write.Line(
+                    "info",
+                    armor.ArmorNamespace + ":" + armor.ArmorID +
+                    " recolored vanilla texture " + armor.VanillaTextureId +
+                    " → " + outputPngAbs
+                );
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "VanillaRecolorerWorker: exception while recoloring: " + ex.Message;
+                ConsoleWorker.Write.Line(
+                    "warn",
+                    armor.ArmorNamespace + ":" + armor.ArmorID +
+                    " exception while recoloring vanilla texture: " + ex.Message
+                );
+                return false;
+            }
         }
     }
 }

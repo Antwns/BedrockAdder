@@ -168,13 +168,10 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                 }
             }
 
-            // -------- inventory icon (per PIECE) --------
-
+            // 1) Recolored vanilla icon: UsesVanillaTexture + VanillaTextureId + RecolorTint
             bool iconHandled = false;
-
-            // 1) Recolored vanilla icon: TexturePath like "minecraft:item/iron_helmet.png" + RecolorTint
-            if (!string.IsNullOrWhiteSpace(armor.TexturePath) &&
-                armor.TexturePath.StartsWith("minecraft:", StringComparison.OrdinalIgnoreCase) &&
+            if (armor.UsesVanillaTexture &&
+                !string.IsNullOrWhiteSpace(armor.VanillaTextureId) &&
                 !string.IsNullOrWhiteSpace(armor.RecolorTint) &&
                 !string.IsNullOrWhiteSpace(selectedVersion) &&
                 !selectedVersion.Equals("None", StringComparison.OrdinalIgnoreCase))
@@ -182,14 +179,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                 string iconDestAbs = Path.Combine(armorIconsRoot, baseName + ".png");
                 Directory.CreateDirectory(Path.GetDirectoryName(iconDestAbs) ?? ".");
 
-                if (VanillaRecolorerWorker.TryBuildRecoloredVanillaArmorTexture(
-                        ns,
-                        id,
-                        armor.TexturePath,
-                        armor.RecolorTint!,
-                        selectedVersion,
-                        iconDestAbs,
-                        out var recolorError))
+                if (VanillaRecolorerWorker.TryBuildRecoloredArmorVanillaTexture(armor, selectedVersion, iconDestAbs, out var recolorError))
                 {
                     iconsCopied++;
                     iconHandled = true;
@@ -197,7 +187,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                     ConsoleWorker.Write.Line(
                         "info",
                         "Armor icon (recolored vanilla) built for " + armorKey +
-                        " from " + armor.TexturePath +
+                        " from " + armor.VanillaTextureId +
                         " tint=" + armor.RecolorTint +
                         " → textures/items/armors/" + baseName + ".png"
                     );
@@ -207,11 +197,10 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                     ConsoleWorker.Write.Line(
                         "warn",
                         "Armor icon recolor failed for " + armorKey +
-                        " (" + armor.TexturePath + "), reason: " + (recolorError ?? "unknown")
+                        " (" + armor.VanillaTextureId + "), reason: " + (recolorError ?? "unknown")
                     );
                 }
             }
-
             // 2) Fallback: explicit icon or content-pack texture (non-vanilla)
             if (!iconHandled)
             {

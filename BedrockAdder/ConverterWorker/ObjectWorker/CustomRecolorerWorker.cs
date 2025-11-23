@@ -41,7 +41,7 @@ namespace BedrockAdder.ConverterWorker.ObjectWorker
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPngAbs) ?? ".");
-                VanillaRecolorerWorker.ApplyMultiplyTint(item.TexturePath, outputPngAbs, tint);
+                VanillaRecolorerWorker.ApplyMultiplyTintExternal(item.TexturePath, outputPngAbs, tint);
 
                 ConsoleWorker.Write.Line(
                     "info",

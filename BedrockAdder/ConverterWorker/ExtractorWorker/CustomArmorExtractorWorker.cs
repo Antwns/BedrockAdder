@@ -187,9 +187,9 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             }
                         }
 
-                        // Detect vanilla recolor info like items do:
-                        string? vanillaId = null;
-                        ItemYamlParserWorker.TryDetectVanillaTexture(itemProps, out vanillaId);
+                        // Detect vanilla recolor info like items do (same semantics as CustomItem)
+                        string? vanillaId;
+                        bool usesVanillaTexture = ItemYamlParserWorker.TryDetectVanillaTexture(itemProps, out vanillaId);
 
                         string? tint = null;
                         ItemYamlParserWorker.TryGetRecolorTint(itemProps, out tint);
@@ -199,6 +199,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
 
                         string armorMaterial = ArmorYamlParserWorker.TryGetArmorMaterial(itemProps, DefaultMaterialForSlot(armorSlot));
                         int? customModelData = ArmorYamlParserWorker.TryGetCustomModelDataFromCache(itemsAdderRootPath, armorNamespace, armorId);
+
 
                         // Only helmets can have a 3D model (if present in YAML)
                         string? helmetModelPathRaw = armorSlot == "helmet"
@@ -249,11 +250,11 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         }
 
                         // Build the data object.
-                        // TexturePath semantics:
-                        //   - If vanillaId != null → TexturePath holds the vanilla ID (e.g. "minecraft:item/iron_helmet.png")
-                        //   - Otherwise → it will later be filled with an absolute IA icon path, or remain empty.
-                        string initialTexturePath = vanillaId ?? string.Empty;
-
+                        //
+                        // Semantics (aligned with CustomItem):
+                        // - UsesVanillaTexture: true if graphics/resource points to a minecraft: texture.
+                        // - VanillaTextureId : the full minecraft:... id (e.g. "minecraft:item/iron_helmet.png").
+                        // - TexturePath      : absolute IA icon path for non-vanilla armors (if we can resolve it).
                         var customArmor = new CustomArmor
                         {
                             ArmorNamespace = armorNamespace,
@@ -261,7 +262,8 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             Slot = armorSlot,
                             Material = armorMaterial,
 
-                            TexturePath = initialTexturePath,
+                            // For non-vanilla, this will be filled below from IA; for vanilla we leave it empty
+                            TexturePath = string.Empty,
                             IconPath = null,
 
                             ModelPath = helmetModelResolved,
@@ -270,15 +272,18 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             ArmorLayerChest = armorLayerChestRel ?? string.Empty,
                             ArmorLayerLegs = armorLayerLegsRel ?? string.Empty,
 
-                            RecolorTint = tint ?? string.Empty,
+                            // Recolor tint (can be null if not recolored)
+                            RecolorTint = tint,
+                            UsesVanillaTexture = usesVanillaTexture,
+                            VanillaTextureId = usesVanillaTexture ? vanillaId : null,
 
-                            // NEW: group all pieces that share the same equipment set
+                            // Group all pieces that share the same equipment set
                             ArmorSetId = !string.IsNullOrWhiteSpace(equipmentId)
                                 ? equipmentId              // e.g. "bronze_armor"
                                 : armorId                  // fallback: per-item set
                         };
 
-                        if (vanillaId != null)
+                        if (usesVanillaTexture && !string.IsNullOrWhiteSpace(vanillaId))
                         {
                             ConsoleWorker.Write.Line(
                                 "info",
@@ -288,7 +293,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         }
 
                         // If this armor is NOT vanilla-based, try resolving an IA-held icon
-                        if (vanillaId == null && !string.IsNullOrWhiteSpace(heldIconTexturePath))
+                        if (!usesVanillaTexture && !string.IsNullOrWhiteSpace(heldIconTexturePath))
                         {
                             if (JsonParserWorker.TryResolveContentAssetAbsolute(
                                     itemsAdderRootPath,

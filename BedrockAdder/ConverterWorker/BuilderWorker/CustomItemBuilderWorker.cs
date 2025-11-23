@@ -237,7 +237,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
 
                     if (it.UsesVanillaTexture)
                     {
-                        recolorSuccess = VanillaRecolorerWorker.TryBuildRecoloredVanillaTexture(it, selectedVersion, iconAbs, out recolorError);
+                        recolorSuccess = VanillaRecolorerWorker.TryBuildRecoloredItemVanillaTexture(it, selectedVersion, iconAbs, out recolorError);
                     }
                     else
                     {
