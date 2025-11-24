@@ -292,28 +292,109 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             );
                         }
 
-                        // If this armor is NOT vanilla-based, try resolving an IA-held icon
+                        // If this armor is NOT vanilla-based, try resolving an IA-held icon.
                         if (!usesVanillaTexture && !string.IsNullOrWhiteSpace(heldIconTexturePath))
                         {
-                            if (JsonParserWorker.TryResolveContentAssetAbsolute(
-                                    itemsAdderRootPath,
-                                    heldIconTexturePath,
-                                    out var heldIconAbs,
-                                    armorNamespace
-                                ) && File.Exists(heldIconAbs))
+                            // Normalize the icon path.
+                            // Cases:
+                            //  - "boots/rubber_boots"
+                            //  - "textures/boots/rubber_boots"
+                            //  - "assets/minecraft/textures/boots/rubber_boots.png"
+                            string normalizedIconPath = heldIconTexturePath.Replace("\\", "/").Trim();
+
+                            // If it looks like an assets path, collapse it to a pack-relative texture path.
+                            if (normalizedIconPath.StartsWith("assets/", StringComparison.OrdinalIgnoreCase))
                             {
-                                customArmor.TexturePath = heldIconAbs;
-                                customArmor.IconPath = heldIconAbs;
+                                // Strip leading "assets/"
+                                string tmp = normalizedIconPath.Substring("assets/".Length);
+
+                                // tmp is now "<ns>/textures/boots/rubber_boots.png" or similar
+                                int firstSlash = tmp.IndexOf('/');
+                                if (firstSlash >= 0)
+                                {
+                                    // Drop "<ns>/"
+                                    tmp = tmp.Substring(firstSlash + 1);
+                                }
+
+                                // If it now starts with "textures/", drop that as well.
+                                if (tmp.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tmp = tmp.Substring("textures/".Length);
+                                }
+
+                                // Remove .png if present
+                                if (tmp.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tmp = tmp.Substring(0, tmp.Length - 4);
+                                }
+
+                                normalizedIconPath = tmp.Replace("\\", "/");
                             }
                             else
                             {
+                                // Not an assets path: strip leading "textures/" if it's there, and remove ".png".
+                                if (normalizedIconPath.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    normalizedIconPath = normalizedIconPath.Substring("textures/".Length);
+                                }
+
+                                if (normalizedIconPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    normalizedIconPath = normalizedIconPath.Substring(0, normalizedIconPath.Length - 4);
+                                }
+                            }
+
+                            // 1) Direct IA-style resolution using our known pattern:
+                            //    {root}/contents/{namespace}/resourcepack/{namespace}/textures/{normalizedIconPath}.png
+                            string directAbs = ArmorYamlParserWorker.BuildItemsAdderContentTexturePath(
+                                itemsAdderRootPath,
+                                armorNamespace,
+                                normalizedIconPath
+                            );
+
+                            if (File.Exists(directAbs))
+                            {
+                                customArmor.TexturePath = directAbs;
+                                customArmor.IconPath = directAbs;
+
                                 ConsoleWorker.Write.Line(
-                                    "debug",
+                                    "info",
                                     armorNamespace + ":" + armorId +
-                                    " armor IA icon not resolved in content pack: " + heldIconTexturePath
+                                    " armor IA icon resolved via direct content path: " +
+                                    directAbs.Replace(Path.DirectorySeparatorChar, '/')
                                 );
                             }
+                            else
+                            {
+                                // 2) Fallback: use JsonParserWorker for any remaining asset-style cases
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(
+                                        itemsAdderRootPath,
+                                        heldIconTexturePath,
+                                        out var heldIconAbs,
+                                        armorNamespace
+                                    ) && File.Exists(heldIconAbs))
+                                {
+                                    customArmor.TexturePath = heldIconAbs;
+                                    customArmor.IconPath = heldIconAbs;
+
+                                    ConsoleWorker.Write.Line(
+                                        "info",
+                                        armorNamespace + ":" + armorId +
+                                        " armor IA icon resolved via TryResolveContentAssetAbsolute: " +
+                                        heldIconAbs.Replace(Path.DirectorySeparatorChar, '/')
+                                    );
+                                }
+                                else
+                                {
+                                    ConsoleWorker.Write.Line(
+                                        "error",
+                                        armorNamespace + ":" + armorId +
+                                        " armor IA icon not resolved in content pack: " + heldIconTexturePath
+                                    );
+                                }
+                            }
                         }
+
 
                         foreach (var kv in helmetTextureMapAbs)
                         {

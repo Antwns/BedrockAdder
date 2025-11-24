@@ -216,42 +216,120 @@ namespace BedrockAdder.FileWorker
             return defaultMaterial;
         }
 
+        /// <summary>
+        /// For armor items we want something like "boots/rubber_boots.png" or
+        /// "assets/ns/textures/boots/rubber_boots.png", same behavior as
+        /// ItemYamlParserWorker.TryGet2DTexturePathNormalized.
+        /// This is later resolved to an absolute path by the extractor.
+        /// </summary>
         internal static string? TryGet2DIcon(YamlMappingNode itemProps)
         {
-            if (TryGetMapping(itemProps, "graphics", out var graphicsNode) && graphicsNode is not null)
+            string raw = string.Empty;
+
+            // 1) graphics.texture
+            if (TryGetMapping(itemProps, "graphics", out var graphicsNode) &&
+                graphicsNode is YamlMappingNode graphicsMap &&
+                TryGetScalar(graphicsMap, "texture", out var gTex) &&
+                !string.IsNullOrWhiteSpace(gTex))
             {
-                if (TryGetScalar(graphicsNode, "texture", out var tex) && !string.IsNullOrWhiteSpace(tex))
+                raw = gTex!;
+            }
+            else if (TryGetMapping(itemProps, "resource", out var resourceNode) &&
+                     resourceNode is YamlMappingNode resourceMap)
+            {
+                // 2) resource.texture_path
+                if (TryGetScalar(resourceMap, "texture_path", out var rTexPath) &&
+                    !string.IsNullOrWhiteSpace(rTexPath))
                 {
-                    string norm = JsonParserWorker.NormalizeTexturePathFromModelValue(tex!);
-                    return string.IsNullOrWhiteSpace(norm) ? null : norm;
+                    raw = rTexPath!;
+                }
+                // 3) resource.texture
+                else if (TryGetScalar(resourceMap, "texture", out var rTex) &&
+                         !string.IsNullOrWhiteSpace(rTex))
+                {
+                    raw = rTex!;
+                }
+                // 4) resource.textures: [ "foo/bar", ... ]
+                else if (resourceMap.Children.TryGetValue(new YamlScalarNode("textures"), out var texturesNode) &&
+                         texturesNode is YamlSequenceNode seq &&
+                         seq.Children.Count > 0 &&
+                         seq.Children[0] is YamlScalarNode firstTexNode &&
+                         !string.IsNullOrWhiteSpace(firstTexNode.Value))
+                {
+                    raw = firstTexNode.Value!;
                 }
             }
 
-            if (TryGetMapping(itemProps, "resource", out var resourceNode) && resourceNode is not null)
+            if (string.IsNullOrWhiteSpace(raw))
+                return null;
+
+            // Basic YAML-style normalization (NOT the model JSON normalizer)
+            var tex = raw.Trim().Replace("\\", "/");
+
+            // If someone put a full vanilla id here, bail; that is handled via TryDetectVanillaTexture on items side.
+            if (tex.StartsWith("minecraft:", StringComparison.OrdinalIgnoreCase))
             {
-                if (TryGetScalar(resourceNode, "texture", out var tex2) && !string.IsNullOrWhiteSpace(tex2))
-                {
-                    string norm = JsonParserWorker.NormalizeTexturePathFromModelValue(tex2!);
-                    return string.IsNullOrWhiteSpace(norm) ? null : norm;
-                }
-                if (TryGetScalar(resourceNode, "texture_path", out var texPath) && !string.IsNullOrWhiteSpace(texPath))
-                {
-                    string norm = JsonParserWorker.NormalizeTexturePathFromModelValue(texPath!);
-                    return string.IsNullOrWhiteSpace(norm) ? null : norm;
-                }
+                return null;
             }
 
-            return null;
+            // Namespaced textures (e.g. namespace:items/sword)
+            int colonIndex = tex.IndexOf(':');
+            if (colonIndex > 0)
+            {
+                string ns = tex.Substring(0, colonIndex).Trim();
+                string rel = tex.Substring(colonIndex + 1).TrimStart('/');
+
+                if (string.IsNullOrWhiteSpace(ns) || string.IsNullOrWhiteSpace(rel))
+                {
+                    return null;
+                }
+
+                if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                    rel = "textures/" + rel;
+
+                if (string.IsNullOrEmpty(Path.GetExtension(rel)))
+                    rel += ".png";
+
+                // "assets/ns/textures/foo/bar.png"
+                return $"assets/{ns}/{rel}";
+            }
+
+            // Strip any full asset prefix that might be present
+            const string assetsPrefix = "assets/minecraft/textures/";
+            const string texturesPrefix = "textures/";
+
+            if (tex.StartsWith(assetsPrefix, StringComparison.OrdinalIgnoreCase))
+                tex = tex.Substring(assetsPrefix.Length);
+            else if (tex.StartsWith(texturesPrefix, StringComparison.OrdinalIgnoreCase))
+                tex = tex.Substring(texturesPrefix.Length);
+
+            // If there is no extension, assume .png (ItemsAdder convention)
+            if (string.IsNullOrEmpty(Path.GetExtension(tex)))
+                tex += ".png";
+
+            return tex;
         }
-        internal static bool TryGetVanillaRecolorInfo(YamlMappingNode itemProps, out string? vanillaTextureId, out string? tintHex)
+
+        /// <summary>
+        /// Detects vanilla recolor info for armor in the "graphics" section
+        /// where ItemsAdder might specify:
+        ///   graphics:
+        ///     texture: minecraft:item/iron_helmet.png
+        ///     color:  FFCC66
+        /// </summary>
+        internal static bool TryGetVanillaRecolorInfo(
+            YamlMappingNode itemProps,
+            out string? vanillaTextureId,
+            out string? tintHex
+        )
         {
             vanillaTextureId = null;
             tintHex = null;
 
-            if (ArmorYamlParserWorker.TryGetMapping(itemProps, "graphics", out var graphicsMap) && graphicsMap is not null)
+            if (TryGetMapping(itemProps, "graphics", out var graphicsMap) && graphicsMap is not null)
             {
-                ArmorYamlParserWorker.TryGetScalar(graphicsMap, "texture", out var texRaw);
-                ArmorYamlParserWorker.TryGetScalar(graphicsMap, "color", out var colorRaw);
+                TryGetScalar(graphicsMap, "texture", out var texRaw);
+                TryGetScalar(graphicsMap, "color", out var colorRaw);
 
                 if (!string.IsNullOrWhiteSpace(texRaw) && !string.IsNullOrWhiteSpace(colorRaw))
                 {
