@@ -191,6 +191,10 @@ namespace BedrockAdder.FileWorker
             return normalized;
         }
 
+        /// <summary>
+        /// Builds the absolute file path for a content-pack armor texture using ItemsAdder content layout:
+        /// {itemsAdderRootPath}\contents\{armorNamespace}\resourcepack\{armorNamespace}\textures\{relativeTexturePath}
+        /// </summary>
         internal static string BuildItemsAdderContentTexturePath(string itemsAdderRootPath, string armorNamespace, string relativeTexturePath)
         {
             string rel = relativeTexturePath.Replace("\\", "/").TrimStart('/');
@@ -217,13 +221,15 @@ namespace BedrockAdder.FileWorker
         }
 
         /// <summary>
-        /// For armor items we want something like "boots/rubber_boots.png" or
-        /// "assets/ns/textures/boots/rubber_boots.png", same behavior as
-        /// ItemYamlParserWorker.TryGet2DTexturePathNormalized.
-        /// This is later resolved to an absolute path by the extractor.
+        /// Armor version of ItemYamlParserWorker.TryGet2DTexturePathNormalized.
+        /// Tries to read a 2D icon path from graphics/resource and normalize it into either:
+        ///   - "assets/ns/textures/foo/bar.png"
+        ///   - "foo/bar.png"
+        /// This normalized value is later turned into an absolute path by the extractor.
         /// </summary>
-        internal static string? TryGet2DIcon(YamlMappingNode itemProps)
+        internal static bool TryGet2DIconTexturePathNormalized(YamlMappingNode itemProps, out string normalizedPath)
         {
+            normalizedPath = string.Empty;
             string raw = string.Empty;
 
             // 1) graphics.texture
@@ -261,15 +267,16 @@ namespace BedrockAdder.FileWorker
             }
 
             if (string.IsNullOrWhiteSpace(raw))
-                return null;
+                return false;
 
             // Basic YAML-style normalization (NOT the model JSON normalizer)
             var tex = raw.Trim().Replace("\\", "/");
 
-            // If someone put a full vanilla id here, bail; that is handled via TryDetectVanillaTexture on items side.
+            // If someone put a full vanilla id here, bail; vanilla recolor is handled separately.
             if (tex.StartsWith("minecraft:", StringComparison.OrdinalIgnoreCase))
             {
-                return null;
+                normalizedPath = string.Empty;
+                return false;
             }
 
             // Namespaced textures (e.g. namespace:items/sword)
@@ -281,7 +288,8 @@ namespace BedrockAdder.FileWorker
 
                 if (string.IsNullOrWhiteSpace(ns) || string.IsNullOrWhiteSpace(rel))
                 {
-                    return null;
+                    normalizedPath = string.Empty;
+                    return false;
                 }
 
                 if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
@@ -290,8 +298,8 @@ namespace BedrockAdder.FileWorker
                 if (string.IsNullOrEmpty(Path.GetExtension(rel)))
                     rel += ".png";
 
-                // "assets/ns/textures/foo/bar.png"
-                return $"assets/{ns}/{rel}";
+                normalizedPath = $"assets/{ns}/{rel}";
+                return true;
             }
 
             // Strip any full asset prefix that might be present
@@ -307,7 +315,19 @@ namespace BedrockAdder.FileWorker
             if (string.IsNullOrEmpty(Path.GetExtension(tex)))
                 tex += ".png";
 
-            return tex;
+            normalizedPath = tex;
+            return true;
+        }
+
+        /// <summary>
+        /// Convenience wrapper: returns the normalized 2D icon path or null if none.
+        /// Uses TryGet2DIconTexturePathNormalized under the hood.
+        /// </summary>
+        internal static string? TryGet2DIcon(YamlMappingNode itemProps)
+        {
+            return TryGet2DIconTexturePathNormalized(itemProps, out var normalized) && !string.IsNullOrWhiteSpace(normalized)
+                ? normalized
+                : null;
         }
 
         /// <summary>

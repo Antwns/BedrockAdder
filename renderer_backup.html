@@ -147,21 +147,43 @@
         // Flag to distinguish atlas-based models (3D items) vs cuboid blocks
         let modelHasTextureAtlas = false;
 
+        // ---------------------------------------------------------
+        // NEW: map Minecraft face name -> BoxGeometry face index
+        // BoxGeometry builds faces in this order: +X, -X, +Y, -Y, +Z, -Z
+        // We map that to east, west, up, down, south, north.
+        // ---------------------------------------------------------
+        const FACE_INDEX_BY_NAME = {
+        east: 0,   // +X
+        west: 1,   // -X
+        up:   2,   // +Y
+        down: 3,   // -Y
+        south:4,   // +Z
+        north:5    // -Z
+        };
+
         // Apply UVs / flips:
-        // - For atlas models: use face.uv, and flip V on side faces.
-        // - For non-atlas cuboids: rely on BoxGeometry defaults, with a simple V-flip on side faces.
+        // - For atlas models: use face.uv to overwrite the box face rect.
+        // - For non-atlas cuboids: rely on BoxGeometry defaults, only flip V on side faces.
         function applyFaceUVs(geom, group, face, texture, faceName) {
-        if (!geom || !group) return;
+        if (!geom) return;
         const uvAttr = geom.attributes.uv;
         if (!uvAttr) return;
 
-        // Non-atlas case: flip existing V for side faces only
+        // Which face of the box are we addressing?
+        const faceIndex = FACE_INDEX_BY_NAME[faceName];
+        if (faceIndex === undefined) return;
+
+        const vertsPerFace = 4;
+        const compsPerVert = 2;
+        const base = faceIndex * vertsPerFace * compsPerVert; // 0,8,16,...
+
+        // --- Non-atlas case: just flip existing V for side faces ---
         if (!modelHasTextureAtlas) {
-        if (faceName === "north" || faceName === "south" || faceName === "east" || faceName === "west") {
-        const start = group.start * 2;
-        // 6 vertices per face, 2 components per vertex → 12 floats
-        for (let i = 0; i < 6; i++) {
-        const vIndex = start + i * 2 + 1; // +1 = V component
+        if (faceName === "north" || faceName === "south" ||
+        faceName === "east"  || faceName === "west") {
+
+        for (let v = 0; v < vertsPerFace; v++) {
+        const vIndex = base + v * compsPerVert + 1; // +1 = V component
         if (vIndex < uvAttr.array.length) {
         uvAttr.array[vIndex] = 1.0 - uvAttr.array[vIndex];
         }
@@ -171,11 +193,11 @@
         return;
         }
 
-        // Atlas-based model (3D item / example cuboid using atlas)
+        // --- Atlas-based (or explicit UV-based) case ---
         if (!face || !face.uv || face.uv.length < 4) return;
 
         const tex = texture || null;
-        const texW = tex && tex.image && tex.image.width ? tex.image.width : 16;
+        const texW = tex && tex.image && tex.image.width  ? tex.image.width  : 16;
         const texH = tex && tex.image && tex.image.height ? tex.image.height : 16;
 
         const uv = face.uv;
@@ -184,27 +206,27 @@
         let u2 = uv[2] / texW;
         let v2 = uv[3] / texH;
 
-        // Flip V on side faces
-        if (faceName === "north" || faceName === "south" || faceName === "east" || faceName === "west") {
-        const tmp = v1;
-        v1 = v2;
-        v2 = tmp;
-        }
+        // If you later need a V-flip for side faces, you can re-enable this:
+        // if (faceName === "north" || faceName === "south" ||
+        //     faceName === "east"  || faceName === "west") {
+        //     const tmp = v1;
+        //     v1 = v2;
+        //     v2 = tmp;
+        // }
 
-        const start = group.start * 2;
-        const rect = [
-        // first triangle
-        u2, v1,
-        u1, v1,
-        u2, v2,
-        // second triangle
-        u1, v1,
-        u1, v2,
-        u2, v2
+        // 4 vertices per face; BoxGeometry uses 4 distinct verts per face.
+        const uvs = [
+        u1, v1,  // v0
+        u2, v1,  // v1
+        u1, v2,  // v2
+        u2, v2   // v3
         ];
 
-        for (let i = 0; i < rect.length && (start + i) < uvAttr.array.length; i++) {
-        uvAttr.array[start + i] = rect[i];
+        for (let i = 0; i < uvs.length; i++) {
+        const idx = base + i;
+        if (idx < uvAttr.array.length) {
+        uvAttr.array[idx] = uvs[i];
+        }
         }
 
         uvAttr.needsUpdate = true;

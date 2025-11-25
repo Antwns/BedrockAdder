@@ -266,7 +266,10 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             TexturePath = string.Empty,
                             IconPath = null,
 
+                            // 3D helmet model info (only meaningful for Slot == "helmet")
                             ModelPath = helmetModelResolved,
+                            Is3DHelmet = armorSlot == "helmet" && !string.IsNullOrWhiteSpace(helmetModelResolved),
+
                             CustomModelData = customModelData,
 
                             ArmorLayerChest = armorLayerChestRel ?? string.Empty,
