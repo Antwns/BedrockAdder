@@ -40,33 +40,33 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
             int copiedFiles = 0;
             int registeredSounds = 0;
 
-            foreach (CustomSound snd in Lists.CustomSounds)
+            foreach (CustomSound customSound in Lists.CustomSounds)
             {
-                if (snd == null)
+                if (customSound == null)
                     continue;
 
                 try
                 {
-                    if (string.IsNullOrWhiteSpace(snd.SoundPath) || !File.Exists(snd.SoundPath))
+                    if (string.IsNullOrWhiteSpace(customSound.SoundPath) || !File.Exists(customSound.SoundPath))
                     {
                         ConsoleWorker.Write.Line(
                             "warn",
                             "CustomSoundBuilderWorker: source sound missing for " +
-                            (snd.SoundNamespace ?? "unknown") + ":" + (snd.SoundID ?? "unknown") +
-                            " path=" + (snd.SoundPath ?? "<null>")
+                            (customSound.SoundNamespace ?? "unknown") + ":" + (customSound.SoundID ?? "unknown") +
+                            " path=" + (customSound.SoundPath ?? "<null>")
                         );
                         continue;
                     }
 
-                    string ns = string.IsNullOrWhiteSpace(snd.SoundNamespace)
+                    string ns = string.IsNullOrWhiteSpace(customSound.SoundNamespace)
                         ? "unknown"
-                        : snd.SoundNamespace.Trim();
+                        : customSound.SoundNamespace.Trim();
 
                     // Compute the relative path inside IA's contents/<ns>/sounds folder.
                     // This mirrors how Furnace produced:
                     //  sounds/spawn_1.ogg
                     //  sounds/demon_sounds/demon_laugh1.ogg
-                    string relPath = GetRelPathFromIaSoundsRoot(itemsAdderRoot, ns, snd.SoundPath);
+                    string relPath = GetRelPathFromIaSoundsRoot(itemsAdderRoot, ns, customSound.SoundPath);
 
                     // Destination in Bedrock pack: sounds/<relPath>
                     string destRel = Path.Combine("sounds", relPath).Replace('\\', '/');
@@ -78,7 +78,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
 
                     try
                     {
-                        File.Copy(snd.SoundPath, destAbs, overwrite: true);
+                        File.Copy(customSound.SoundPath, destAbs, overwrite: true);
                         copiedFiles++;
                     }
                     catch (Exception exCopy)
@@ -86,7 +86,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                         ConsoleWorker.Write.Line(
                             "warn",
                             "CustomSoundBuilderWorker: failed copying sound " +
-                            snd.SoundPath + " → " + destAbs + " ex=" + exCopy.Message
+                            customSound.SoundPath + " → " + destAbs + " ex=" + exCopy.Message
                         );
                         // still continue, so the JSON entry exists
                     }
@@ -95,7 +95,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                     string nameNoExt = RemoveExtension(destRel);
 
                     // Furnace-style sound key: "<namespace>:<localId>"
-                    string soundKey = BuildSoundKey(ns, snd.SoundID);
+                    string soundKey = BuildSoundKey(ns, customSound.SoundID);
 
                     if (!soundDefinitions.TryGetValue(soundKey, out var list))
                     {
@@ -106,10 +106,21 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                     var soundObj = new JObject
                     {
                         ["name"] = nameNoExt,
-                        ["volume"] = snd.Volume,
-                        ["pitch"] = snd.Pitch,
-                        ["stream"] = snd.Stream
+                        ["volume"] = customSound.Volume,
+                        ["pitch"] = customSound.Pitch,
+                        ["stream"] = customSound.Stream
                     };
+
+                    // NEW: only write these if present
+                    if (customSound.AttenuationDistance.HasValue)
+                    {
+                        soundObj["attenuation_distance"] = customSound.AttenuationDistance.Value;
+                    }
+
+                    if (customSound.Weight.HasValue)
+                    {
+                        soundObj["weight"] = customSound.Weight.Value;
+                    }
 
                     list.Add(soundObj);
                     registeredSounds++;
@@ -119,7 +130,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                     ConsoleWorker.Write.Line(
                         "warn",
                         "CustomSoundBuilderWorker: failed processing sound " +
-                        (snd.SoundNamespace ?? "unknown") + ":" + (snd.SoundID ?? "unknown") +
+                        (customSound.SoundNamespace ?? "unknown") + ":" + (customSound.SoundID ?? "unknown") +
                         " ex=" + ex.Message
                     );
                 }

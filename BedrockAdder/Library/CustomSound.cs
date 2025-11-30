@@ -8,7 +8,7 @@
         public float Volume { get; set; } = 1.0f;
         public float Pitch { get; set; } = 1.0f;
         public bool Stream { get; set; } = false; // For large audio files (music/discs)
-        public int? AtteniuationDistance { get; set; } = 0; // Whether the sound attenuates with distance
-        public int? Weight { get; set; } = 1; // Weight for random selection
+        public int? AttenuationDistance { get; set; } // Whether the sound attenuates with distance
+        public int? Weight { get; set; } // Weight for random selection
     }
 }

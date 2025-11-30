@@ -303,7 +303,79 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         }
                     }
 
-                    // (second recolor tint block removed – handled once at the top)
+                    // ---- per-state variants (graphics.models / graphics.textures) ----
+                    if (graphics is YamlMappingNode graphicsMap && !string.IsNullOrWhiteSpace(itemNamespace))
+                    {
+                        // 3D state models: pulling_0, pulling_1, blocking, cast, arrow, rocket, etc.
+                        if (ItemYamlParserWorker.TryGetMapping(graphicsMap, "models", out var modelsMap) &&
+                            modelsMap is YamlMappingNode stateModels)
+                        {
+                            foreach (var entry in stateModels.Children)
+                            {
+                                if (entry.Key is not YamlScalarNode stateKeyNode ||
+                                    entry.Value is not YamlScalarNode modelNameNode)
+                                    continue;
+
+                                string stateName = stateKeyNode.Value ?? string.Empty;
+                                string stateModelName = modelNameNode.Value ?? string.Empty;
+
+                                if (string.IsNullOrWhiteSpace(stateName) || string.IsNullOrWhiteSpace(stateModelName))
+                                    continue;
+
+                                // Build a normalized assets/... model path for this state
+                                string modelAsset = "assets/" + itemNamespace + "/models/" + stateModelName + ".json";
+
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, modelAsset, out var modelAbs) &&
+                                    File.Exists(modelAbs))
+                                {
+                                    customItem.StateModelPaths[stateName] = modelAbs;
+                                    LogInfo(itemNamespace, itemId, "state model[" + stateName + "] → " + modelAbs);
+                                }
+                                else
+                                {
+                                    // Still remember the normalized asset path even if the physical file is missing
+                                    customItem.StateModelPaths[stateName] = modelAsset;
+                                    ConsoleWorker.Write.Line("warn",
+                                        itemNamespace + ":" + itemId + " missing state model " + stateName + ": " + modelAsset);
+                                }
+                            }
+                        }
+
+                        // 2D state textures: pulling_0, pulling_1, cast, arrow, rocket, etc.
+                        if (ItemYamlParserWorker.TryGetMapping(graphicsMap, "textures", out var texturesMap) &&
+                            texturesMap is YamlMappingNode stateTextures)
+                        {
+                            foreach (var entry in stateTextures.Children)
+                            {
+                                if (entry.Key is not YamlScalarNode stateKeyNode ||
+                                    entry.Value is not YamlScalarNode texNameNode)
+                                    continue;
+
+                                string stateName = stateKeyNode.Value ?? string.Empty;
+                                string stateTexRaw = texNameNode.Value ?? string.Empty;
+
+                                if (string.IsNullOrWhiteSpace(stateName) || string.IsNullOrWhiteSpace(stateTexRaw))
+                                    continue;
+
+                                string assetPath = ItemYamlParserWorker.NormalizeStateTextureAssetPath(itemNamespace, stateTexRaw);
+                                if (string.IsNullOrWhiteSpace(assetPath))
+                                    continue;
+
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, assetPath, out var texAbs) &&
+                                    File.Exists(texAbs))
+                                {
+                                    customItem.StateTexturePaths[stateName] = texAbs;
+                                    LogInfo(itemNamespace, itemId, "state texture[" + stateName + "] → " + texAbs);
+                                }
+                                else
+                                {
+                                    customItem.StateTexturePaths[stateName] = assetPath;
+                                    ConsoleWorker.Write.Line("warn",
+                                        itemNamespace + ":" + itemId + " missing state texture " + stateName + ": " + assetPath);
+                                }
+                            }
+                        }
+                    }
 
                     Lists.CustomItems.Add(customItem);
                     totalEntries++;

@@ -65,7 +65,8 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
 
             // Selected Minecraft version (for vanilla recolors)
             string selectedVersion = string.Empty;
-            App.Current.Dispatcher.Invoke(() => {
+            App.Current.Dispatcher.Invoke(() =>
+            {
                 try
                 {
                     selectedVersion = WindowManager.Main?.VersionSelector?.SelectedItem?.ToString() ?? string.Empty;
@@ -298,11 +299,27 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
 
             // Write minimal item definition json (binds to atlas key)
             WriteItemDefinition(session, bedrockId, atlasKey);
+
+            // 🔹 NEW: register special items for animation controller building
+            if (IsSpecialToolMaterial(it.Material))
+            {
+                try
+                {
+                    AnimationControllerBuilder.RegisterSpecialItem(session, it);
+                }
+                catch (Exception ex)
+                {
+                    ConsoleWorker.Write.Line(
+                        "warn",
+                        ns + ":" + id + " animation controller registration failed: " + ex.Message
+                    );
+                }
+            }
         }
 
-        // ---------- helpers ----------
+    // ---------- helpers ----------
 
-        private static void UpdateItemAtlas(PackSession session, string key, string iconRel)
+    private static void UpdateItemAtlas(PackSession session, string key, string iconRel)
         {
             string atlasPath = Path.Combine(session.PackRoot, "textures", "item_texture.json");
             JObject root;
@@ -381,6 +398,17 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                 else sb.Append('_');
             }
             return sb.ToString();
+        }
+
+        private static bool IsSpecialToolMaterial(string material)
+        {
+            if (string.IsNullOrWhiteSpace(material))
+                return false;
+
+            return material.Equals("BOW", StringComparison.OrdinalIgnoreCase)
+                || material.Equals("CROSSBOW", StringComparison.OrdinalIgnoreCase)
+                || material.Equals("FISHING_ROD", StringComparison.OrdinalIgnoreCase)
+                || material.Equals("SHIELD", StringComparison.OrdinalIgnoreCase) || material.Equals("TRIDENT", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

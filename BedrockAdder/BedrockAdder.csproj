@@ -114,6 +114,7 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="ConverterWorker\BuilderWorker\AnimationControllerBuilder.cs" />
     <Compile Include="ConverterWorker\BuilderWorker\CustomArmorBuilderWorker.cs" />
     <Compile Include="ConverterWorker\BuilderWorker\CustomBlockBuilderWorker.cs" />
     <Compile Include="ConverterWorker\BuilderWorker\CustomFontBuilderWorker.cs" />

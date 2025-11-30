@@ -26,7 +26,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                         continue;
                     }
 
-                    // Detect if this entire YAML file is a GUI definitions file
+                    // NEW: detect if this entire YAML file is a GUI definitions file
                     bool isGuiFile = FontYamlParserWorker.DetectIsGuiFile(filePath);
 
                     using var reader = new StreamReader(filePath);
@@ -47,8 +47,8 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
 
                         string fontSetId = setKey.Value ?? "default";
 
-                        // scale_ratio at set level (optional)
-                        int? scaleRatio = null;
+                        // scale_ratio at set level (default 1)
+                        int scaleRatio = 1;
                         if (MainYamlParserWorker.TryGetScalar(setMap, "scale_ratio", out var sr) && int.TryParse(sr, out var srInt))
                             scaleRatio = srInt;
 
@@ -75,7 +75,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                                     ScaleRatio = scaleRatio,
                                     YPosition = yPos,
                                     FontSymbol = symbol,
-                                    IsGui = isGuiFile
+                                    IsGui = isGuiFile // NEW
                                 };
 
                                 Lists.CustomFonts.Add(cfSet);
@@ -86,7 +86,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                                 ConsoleWorker.Write.Line(
                                     exists ? "info" : "warn",
                                     "Font set " + fontNamespace + ":" + fontSetId +
-                                    " path=" + textureRel + " (exists=" + exists + ") scale=" + (scaleRatio?.ToString() ?? "null") + " y=" + yPos +
+                                    " path=" + textureRel + " (exists=" + exists + ") scale=" + scaleRatio + " y=" + yPos +
                                     (string.IsNullOrEmpty(symbol) ? "" : " char='" + symbol + "'") +
                                     (isGuiFile ? " [GUI]" : "")
                                 );
@@ -134,7 +134,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                                 ScaleRatio = scaleRatio,
                                 YPosition = yPos,
                                 FontSymbol = charDecoded,
-                                IsGui = isGuiFile
+                                IsGui = isGuiFile // NEW
                             };
 
                             Lists.CustomFonts.Add(cf);
@@ -145,7 +145,7 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             ConsoleWorker.Write.Line(
                                 existsGlyph ? "info" : "warn",
                                 "Font glyph " + fontNamespace + ":" + fontSetId +
-                                " char='" + charDecoded + "' tex=" + textureRel + " (exists=" + existsGlyph + ") scale=" + (scaleRatio?.ToString() ?? "null") + " y=" + yPos +
+                                " char='" + charDecoded + "' tex=" + textureRel + " (exists=" + existsGlyph + ") scale=" + scaleRatio + " y=" + yPos +
                                 (isGuiFile ? " [GUI]" : "")
                             );
                         }

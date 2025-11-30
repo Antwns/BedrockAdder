@@ -301,5 +301,53 @@ namespace BedrockAdder.FileWorker
 
             return false;
         }
+
+        /// <summary>
+        /// Normalizes a per-state texture value from YAML (e.g. "black_bow_0" or "ns:items/black_bow_0")
+        /// into a normalized asset path like "assets/ns/textures/black_bow_0.png".
+        /// This is used for graphics.textures.* state entries (bow pulling_*, rod cast, etc.).
+        /// </summary>
+        internal static string NormalizeStateTextureAssetPath(string itemNamespace, string rawTextureValue)
+        {
+            if (string.IsNullOrWhiteSpace(rawTextureValue))
+                return string.Empty;
+
+            string tex = rawTextureValue.Trim().Replace("\\", "/");
+
+            // Explicit vanilla id
+            if (tex.StartsWith("minecraft:", StringComparison.OrdinalIgnoreCase))
+            {
+                string rel = tex.Substring("minecraft:".Length).TrimStart('/');
+                if (!rel.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+                    rel = "textures/" + rel;
+                if (string.IsNullOrEmpty(Path.GetExtension(rel)))
+                    rel += ".png";
+
+                return "assets/minecraft/" + rel;
+            }
+
+            string ns = itemNamespace;
+            string relPath = tex;
+
+            // Namespaced state texture: otherns:path
+            int colonIndex = tex.IndexOf(':');
+            if (colonIndex > 0)
+            {
+                ns = tex.Substring(0, colonIndex).Trim();
+                relPath = tex.Substring(colonIndex + 1).TrimStart('/');
+            }
+
+            // Strip leading "textures/" if present
+            const string texturesPrefix = "textures/";
+            if (relPath.StartsWith(texturesPrefix, StringComparison.OrdinalIgnoreCase))
+                relPath = relPath.Substring(texturesPrefix.Length);
+
+            // Ensure .png extension
+            if (string.IsNullOrEmpty(Path.GetExtension(relPath)))
+                relPath += ".png";
+
+            return $"assets/{ns}/textures/{relPath}";
+        }
+
     }
 }
