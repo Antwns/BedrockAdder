@@ -209,6 +209,17 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                     }
                 }
 
+                try
+                {
+                    // Additionally, render 3D icons for any state models (pulling_0/1/2, arrow, rocket, etc.)
+                    // into textures/items/{ns}/{id}_{state}.png so GUI can show the correct frames.
+                    RenderStateIconsFromModels(session, it, renderer, itemsAdderFolder);
+                }
+                catch
+                {
+                    ConsoleWorker.Write.Line("Error", ns + ":" + id + " failed rendering 3D state icons for " + it.ItemNamespace + ":" + it.ItemID + ", does it contain custom states?");
+                }
+
                 // 3) Fallback: if ModelBuilderWorker already produced an icon, use that.
                 if (string.IsNullOrWhiteSpace(iconSourceAbs) &&
                     built.IconPngAbs != null &&
@@ -552,6 +563,138 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
                 fileName = fileName.Substring(0, fileName.Length - 5);
 
             return fileName;
+        }
+
+        /// <summary>
+        /// Renders 2D icons for 3D state models (graphics.models.*, resource-derived states)
+        /// into the Bedrock pack, one PNG per state:
+        ///
+        ///   textures/items/{namespace}/{id}_{state}.png
+        ///
+        /// This is primarily useful for bows/crossbows where Bedrock shows different
+        /// icons in the hotbar based on state.
+        /// </summary>
+        private static void RenderStateIconsFromModels(
+            PackSession session,
+            CustomItem it,
+            IModelIconRenderer renderer,
+            string itemsAdderFolder)
+        {
+            if (it.StateModelPaths == null || it.StateModelPaths.Count == 0)
+                return;
+
+            string ns = it.ItemNamespace ?? "unknown";
+            string baseId = it.ItemID ?? "unknown";
+
+            // We'll render into the same _icons work folder used for the base icon.
+            string iconWorkRoot = Path.Combine(session.PackRoot, "_icons");
+            Directory.CreateDirectory(iconWorkRoot);
+
+            foreach (var kv in it.StateModelPaths)
+            {
+                string stateName = kv.Key;
+                string stateModelPath = kv.Value;
+
+                if (string.IsNullOrWhiteSpace(stateName) ||
+                    string.IsNullOrWhiteSpace(stateModelPath))
+                    continue;
+
+                // Skip "normal", we already rendered the base icon for that.
+                if (stateName.Equals("normal", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // We only care about our special tools here (bows, crossbows, etc.)
+                if (!IsSpecialToolMaterial(it.Material))
+                    continue;
+
+                // Build a lightweight temporary CustomItem just for rendering this state's icon.
+                var temp = new CustomItem
+                {
+                    ItemNamespace = it.ItemNamespace,
+                    ItemID = baseId + "_" + stateName,
+                    Material = it.Material,
+                    RecolorTint = it.RecolorTint,
+                    UsesVanillaTexture = it.UsesVanillaTexture,
+                    VanillaTextureId = it.VanillaTextureId,
+                    CustomModelData = it.CustomModelData,
+                    Is3D = true,
+                    ModelPath = stateModelPath
+                };
+
+                temp.ModelTexturePaths.Clear();
+
+                // Derive the modelName for ResolveModelTextureMapWithParents
+                string modelName = DeriveModelNameFromPath(stateModelPath, ns);
+                var texMap = JsonParserWorker.ResolveModelTextureMapWithParents(itemsAdderFolder, ns, modelName);
+
+                foreach (var texKv in texMap)
+                {
+                    string normalizedAsset = texKv.Value;
+                    if (string.IsNullOrWhiteSpace(normalizedAsset))
+                        continue;
+
+                    if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalizedAsset, out var texAbs, ns) &&
+                        !string.IsNullOrWhiteSpace(texAbs) &&
+                        File.Exists(texAbs))
+                    {
+                        temp.ModelTexturePaths[texKv.Key] = texAbs;
+
+                        if (string.IsNullOrWhiteSpace(temp.TexturePath))
+                            temp.TexturePath = texAbs;
+                    }
+                }
+
+                // If we still have no textures, don't even try to render.
+                if (temp.ModelTexturePaths.Count == 0 && string.IsNullOrWhiteSpace(temp.TexturePath))
+                {
+                    ConsoleWorker.Write.Line(
+                        "warn",
+                        ns + ":" + baseId + " no textures available to render state icon [" + stateName + "]");
+                    continue;
+                }
+
+                ConsoleWorker.Write.Line(
+                    "info",
+                    ns + ":" + baseId + " attempting 3D state icon render for [" + stateName + "] via ModelImageBuilderWorker.");
+
+                var icon = ModelImageBuilderWorker.RenderItemIcon(temp, iconWorkRoot, renderer);
+                if (icon.Success &&
+                    !string.IsNullOrWhiteSpace(icon.IconPngAbs) &&
+                    File.Exists(icon.IconPngAbs))
+                {
+                    // Copy the generated PNG into the pack as textures/items/ns/id_state.png
+                    string fileName = Sanitize(baseId) + "_" + Sanitize(stateName) + ".png";
+                    string rel = Path.Combine("textures", "items", ns, fileName).Replace('\\', '/');
+                    string abs = Path.Combine(session.PackRoot, rel.Replace('/', Path.DirectorySeparatorChar));
+
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(abs)!);
+                        File.Copy(icon.IconPngAbs, abs, true);
+                        ConsoleWorker.Write.Line(
+                            "info",
+                            ns + ":" + baseId + " 3D state icon [" + stateName + "] → " + rel);
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleWorker.Write.Line(
+                            "warn",
+                            ns + ":" + baseId + " failed copying 3D state icon [" + stateName + "]: " + ex.Message);
+                    }
+                }
+                else
+                {
+                    if (icon.Notes != null && icon.Notes.Count > 0)
+                    {
+                        foreach (var note in icon.Notes)
+                        {
+                            ConsoleWorker.Write.Line(
+                                "warn",
+                                ns + ":" + baseId + " state icon[" + stateName + "] note: " + note);
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>

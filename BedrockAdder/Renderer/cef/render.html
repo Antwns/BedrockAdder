@@ -50,7 +50,7 @@
         const adjY = 0;
         const adjZ = 0;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: bgTransparent });
+        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: bgTransparent });
         renderer.setPixelRatio(1);
         renderer.setSize(size, size);
         renderer.setClearAlpha(bgTransparent ? 0 : 1);
@@ -95,11 +95,16 @@
         0, 0, frameSize, frameSize
         );
         tex.image = canvas;
-        tex.needsUpdate = true;
         }
         } catch (e) {
         // ignore and use original image
         }
+
+        // 🔹 Make sampling crisp for pixel-art / detailed atlases
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
+        tex.needsUpdate = true;
 
         resolve(tex);
         },
@@ -108,6 +113,7 @@
         );
         });
         }
+
 
         async function loadTextureDictionary(map) {
         const result = {};
@@ -164,7 +170,7 @@
         // Apply UVs / flips:
         // - For atlas models: use face.uv to overwrite the box face rect.
         // - For non-atlas cuboids: rely on BoxGeometry defaults, only flip V on side faces.
-                function applyFaceUVs(geom, group, face, texture, faceName) {
+        function applyFaceUVs(geom, group, face, texture, faceName) {
         if (!geom) return;
         const uvAttr = geom.attributes.uv;
         if (!uvAttr) return;

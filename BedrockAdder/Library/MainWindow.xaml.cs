@@ -122,7 +122,7 @@ namespace BedrockAdder.Library
                     ConsoleWorker.Write.Line("info", "Generating bedrock items...");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     Task.Delay(2000).Wait();
-                    CustomItemBuilderWorker.BuildCustomItems(currentSession, 128, ItemsAdderDir);
+                    CustomItemBuilderWorker.BuildCustomItems(currentSession, 512, ItemsAdderDir);
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Finished generating bedrock items!");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
@@ -138,7 +138,7 @@ namespace BedrockAdder.Library
                     ConsoleWorker.Write.Line("info", "Generating bedrock blocks...");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     Task.Delay(2000).Wait();
-                    CustomBlockBuilderWorker.BuildCustomBlocks(currentSession, 128, ItemsAdderDir);
+                    CustomBlockBuilderWorker.BuildCustomBlocks(currentSession, 512, ItemsAdderDir);
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Finished generating bedrock blocks!");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
@@ -146,7 +146,7 @@ namespace BedrockAdder.Library
                     ConsoleWorker.Write.Line("info", "Generating bedrock furniture...");
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     Task.Delay(2000).Wait();
-                    CustomFurnitureBuilderWorker.BuildCustomFurniture(currentSession, 128, ItemsAdderDir);
+                    CustomFurnitureBuilderWorker.BuildCustomFurniture(currentSession, 512, ItemsAdderDir);
                     ConsoleWorker.Write.Line("info", "--------------------------------");
                     ConsoleWorker.Write.Line("info", "Finished generating bedrock furniture!");
                     ConsoleWorker.Write.Line("info", "--------------------------------");

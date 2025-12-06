@@ -196,23 +196,15 @@
         // --- Atlas-based (or explicit UV-based) case ---
         if (!face || !face.uv || face.uv.length < 4) return;
 
-        const tex = texture || null;
-        const texW = tex && tex.image && tex.image.width  ? tex.image.width  : 16;
-        const texH = tex && tex.image && tex.image.height ? tex.image.height : 16;
-
+        // Blockbench Java models use a fixed 0–16 UV space, regardless
+        // of actual texture pixel size. So we normalize by 16, not texW/texH.
         const uv = face.uv;
-        let u1 = uv[0] / texW;
-        let v1 = uv[1] / texH;
-        let u2 = uv[2] / texW;
-        let v2 = uv[3] / texH;
+        const denom = 16.0;
 
-        // If you later need a V-flip for side faces, you can re-enable this:
-        // if (faceName === "north" || faceName === "south" ||
-        //     faceName === "east"  || faceName === "west") {
-        //     const tmp = v1;
-        //     v1 = v2;
-        //     v2 = tmp;
-        // }
+        let u1 = uv[0] / denom;
+        let v1 = uv[1] / denom;
+        let u2 = uv[2] / denom;
+        let v2 = uv[3] / denom;
 
         // 4 vertices per face; BoxGeometry uses 4 distinct verts per face.
         const uvs = [

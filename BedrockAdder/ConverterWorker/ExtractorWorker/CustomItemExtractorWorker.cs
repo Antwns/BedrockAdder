@@ -438,9 +438,63 @@ namespace BedrockAdder.ExtractorWorker.ConverterWorker
                             customItem.ModelPath = chosenModelPath;
                             LogInfo(itemNamespace, itemId,
                                 "promoted state model '" + chosenState + "' as base ModelPath → " + chosenModelPath);
+
+                            // Also populate ModelTexturePaths and base TexturePath/IconPath
+                            // so ModelBuilderWorker/ModelImageBuilderWorker have textures to work with.
+                            customItem.ModelTexturePaths.Clear();
+
+                            // Derive a modelName suitable for ResolveModelTextureMapWithParents:
+                            // from either an absolute path or an assets/... path.
+                            string cleanPath = chosenModelPath.Replace("\\", "/").Trim();
+                            string modelNameForTex = Path.GetFileNameWithoutExtension(cleanPath);
+
+                            var texMap = JsonParserWorker.ResolveModelTextureMapWithParents(
+                                itemsAdderFolder,
+                                itemNamespace!,
+                                modelNameForTex
+                            );
+
+                            foreach (var kv in texMap)
+                            {
+                                string normalizedAsset = kv.Value;
+                                LogInfo(itemNamespace, itemId, "has model texture " + normalizedAsset + " (key " + kv.Key + ")");
+
+                                if (JsonParserWorker.TryResolveContentAssetAbsolute(itemsAdderFolder, normalizedAsset, out var texAbs) &&
+                                    File.Exists(texAbs))
+                                {
+                                    customItem.ModelTexturePaths[kv.Key] = texAbs;
+                                    LogInfo(itemNamespace, itemId, "resolved texture slot " + kv.Key + " → " + texAbs);
+
+                                    if (string.IsNullOrWhiteSpace(customItem.TexturePath))
+                                    {
+                                        customItem.TexturePath = texAbs;
+                                        LogInfo(itemNamespace, itemId, "auto-assigned texture file " + customItem.TexturePath);
+
+                                        if (JsonParserWorker.IsVanillaTexturePath(normalizedAsset))
+                                        {
+                                            if (!string.IsNullOrWhiteSpace(versionDir))
+                                                LogInfo(itemNamespace, itemId, "vanilla texture will be taken from version " + selectedVersion + " (" + versionDir + ")");
+                                            else
+                                                LogInfo(itemNamespace, itemId, "vanilla texture detected but no version selected");
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    ConsoleWorker.Write.Line("warn",
+                                        itemNamespace + ":" + itemId + " missing texture for slot " + kv.Key + ": " + normalizedAsset);
+                                }
+                            }
+
+                            if (string.IsNullOrWhiteSpace(customItem.IconPath) &&
+                                !string.IsNullOrWhiteSpace(customItem.TexturePath) &&
+                                File.Exists(customItem.TexturePath))
+                            {
+                                customItem.IconPath = customItem.TexturePath;
+                                LogInfo(itemNamespace, itemId, "auto-assigned icon from texture " + customItem.IconPath);
+                            }
                         }
                     }
-
                     // If there is no base TexturePath/IconPath but we have state textures,
                     // pick one ("normal" if present) and use that as the base 2D texture/icon.
                     if (string.IsNullOrWhiteSpace(customItem.TexturePath) &&

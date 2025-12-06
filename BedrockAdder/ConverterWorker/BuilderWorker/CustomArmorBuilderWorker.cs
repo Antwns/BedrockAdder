@@ -60,7 +60,7 @@ namespace BedrockAdder.ConverterWorker.BuilderWorker
 
             // 3D icon renderer (shared for all 3D helmets)
             string renderHtmlAbs = Path.Combine(AppContext.BaseDirectory, "Renderer", "cef", "render.html");
-            int iconSize = 64; // same idea as items; tweak if you want
+            int iconSize = 512; // same idea as items; tweak if you want
             IModelIconRenderer renderer = new CefOffscreenIconRenderer(iconSize, true, renderHtmlAbs);
 
             int texturesCopied = 0;
